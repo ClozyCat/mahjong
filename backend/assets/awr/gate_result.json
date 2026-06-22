@@ -1,0 +1,726 @@
+{
+  "accepted": true,
+  "weighted_metrics": {
+    "avg_score_delta": 14.62166666666667,
+    "win_rate": 0.03999999999999996,
+    "deal_in_rate": 0.21333333333333312
+  },
+  "per_opponent": [
+    {
+      "opponent_id": "sft_cold",
+      "weight": 1.0,
+      "result": {
+        "accepted": false,
+        "failures": [
+          "avg_score_delta",
+          "win_rate"
+        ],
+        "failure_details": [
+          {
+            "metric": "avg_score_delta",
+            "baseline": 4.48,
+            "candidate": -0.12,
+            "threshold": 4.48,
+            "margin": -4.6000000000000005
+          },
+          {
+            "metric": "win_rate",
+            "baseline": 3.3,
+            "candidate": 3.24,
+            "threshold": 3.3,
+            "margin": -0.05999999999999961
+          }
+        ],
+        "baseline": {
+          "seat_count": 50,
+          "avg_score_delta": 4.48,
+          "win_rate": 3.3,
+          "deal_in_rate": 2.64,
+          "avg_first_tenpai_turn": 14.16,
+          "final_tenpai_rate": 0.74,
+          "avg_claims": 26.64,
+          "avg_discards": 243.08,
+          "avg_decisions": 318.82,
+          "avg_latency_ms_per_decision": 0.3938899692616523,
+          "model_loaded_seats": 50,
+          "neural_action_count": 15343,
+          "latency_sample_count": 50,
+          "latency_ms_p50": 0.37003641624264194,
+          "latency_ms_p95": 0.5894852285249514,
+          "latency_ms_max": 0.8122866894197952
+        },
+        "candidate": {
+          "seat_count": 50,
+          "avg_score_delta": -0.12,
+          "win_rate": 3.24,
+          "deal_in_rate": 2.58,
+          "avg_first_tenpai_turn": 14.94,
+          "final_tenpai_rate": 0.78,
+          "avg_claims": 30.26,
+          "avg_discards": 239.84,
+          "avg_decisions": 311.52,
+          "avg_latency_ms_per_decision": 0.5796096558808423,
+          "model_loaded_seats": 50,
+          "neural_action_count": 14985,
+          "latency_sample_count": 50,
+          "latency_ms_p50": 0.5949163449163449,
+          "latency_ms_p95": 0.8045085977911365,
+          "latency_ms_max": 0.865979381443299
+        },
+        "paired": null,
+        "promotion_report": {
+          "metrics": {
+            "avg_score_delta": {
+              "baseline": 4.48,
+              "candidate": -0.12,
+              "threshold": 4.48,
+              "margin": -4.6000000000000005,
+              "passed": false
+            },
+            "win_rate": {
+              "baseline": 3.3,
+              "candidate": 3.24,
+              "threshold": 3.3,
+              "margin": -0.05999999999999961,
+              "passed": false
+            },
+            "deal_in_rate": {
+              "baseline": 2.64,
+              "candidate": 2.58,
+              "threshold": 2.65,
+              "margin": 0.06999999999999984,
+              "passed": true
+            },
+            "tenpai": {
+              "baseline": {
+                "avg_first_tenpai_turn": 14.16,
+                "final_tenpai_rate": 0.74
+              },
+              "candidate": {
+                "avg_first_tenpai_turn": 14.94,
+                "final_tenpai_rate": 0.78
+              },
+              "threshold": "first_tenpai_not_later_or_final_tenpai_not_lower",
+              "margin": 0.040000000000000036,
+              "first_tenpai_margin": -0.7799999999999994,
+              "final_tenpai_margin": 0.040000000000000036,
+              "passed": true
+            }
+          },
+          "claim_rate": {
+            "baseline": 26.64,
+            "candidate": 30.26,
+            "threshold": 53.28,
+            "margin": 23.02,
+            "passed": true
+          },
+          "latency": {
+            "baseline": 0.3938899692616523,
+            "candidate": 0.5796096558808423,
+            "candidate_avg_ms_per_decision": 0.5796096558808423,
+            "candidate_p95_ms": 0.8045085977911365,
+            "candidate_max_ms": 0.865979381443299,
+            "threshold": 200.0,
+            "limit_ms": 200.0,
+            "margin": 199.42039034411917,
+            "passed": true
+          },
+          "paired": null,
+          "warnings": [
+            "paired_subjects_missing"
+          ]
+        }
+      }
+    },
+    {
+      "opponent_id": "awr_iter_0",
+      "weight": 4.0,
+      "result": {
+        "accepted": true,
+        "failures": [],
+        "failure_details": [],
+        "baseline": {
+          "seat_count": 50,
+          "avg_score_delta": 9.68,
+          "win_rate": 3.72,
+          "deal_in_rate": 2.8,
+          "avg_first_tenpai_turn": 16.8,
+          "final_tenpai_rate": 0.58,
+          "avg_claims": 27.1,
+          "avg_discards": 244.52,
+          "avg_decisions": 322.34,
+          "avg_latency_ms_per_decision": 0.4444375504126078,
+          "model_loaded_seats": 50,
+          "neural_action_count": 15507,
+          "latency_sample_count": 50,
+          "latency_ms_p50": 0.44390270827200473,
+          "latency_ms_p95": 0.671466206638316,
+          "latency_ms_max": 0.7643312101910829
+        },
+        "candidate": {
+          "seat_count": 50,
+          "avg_score_delta": 25.94,
+          "win_rate": 3.8,
+          "deal_in_rate": 2.48,
+          "avg_first_tenpai_turn": 15.58,
+          "final_tenpai_rate": 0.72,
+          "avg_claims": 30.78,
+          "avg_discards": 241.62,
+          "avg_decisions": 317.82,
+          "avg_latency_ms_per_decision": 0.5643445975709521,
+          "model_loaded_seats": 50,
+          "neural_action_count": 15231,
+          "latency_sample_count": 50,
+          "latency_ms_p50": 0.5579289830823573,
+          "latency_ms_p95": 0.7424404348580851,
+          "latency_ms_max": 0.9254237288135593
+        },
+        "paired": null,
+        "promotion_report": {
+          "metrics": {
+            "avg_score_delta": {
+              "baseline": 9.68,
+              "candidate": 25.94,
+              "threshold": 9.68,
+              "margin": 16.26,
+              "passed": true
+            },
+            "win_rate": {
+              "baseline": 3.72,
+              "candidate": 3.8,
+              "threshold": 3.72,
+              "margin": 0.07999999999999963,
+              "passed": true
+            },
+            "deal_in_rate": {
+              "baseline": 2.8,
+              "candidate": 2.48,
+              "threshold": 2.8099999999999996,
+              "margin": 0.3299999999999996,
+              "passed": true
+            },
+            "tenpai": {
+              "baseline": {
+                "avg_first_tenpai_turn": 16.8,
+                "final_tenpai_rate": 0.58
+              },
+              "candidate": {
+                "avg_first_tenpai_turn": 15.58,
+                "final_tenpai_rate": 0.72
+              },
+              "threshold": "first_tenpai_not_later_or_final_tenpai_not_lower",
+              "margin": 1.2200000000000006,
+              "first_tenpai_margin": 1.2200000000000006,
+              "final_tenpai_margin": 0.14,
+              "passed": true
+            }
+          },
+          "claim_rate": {
+            "baseline": 27.1,
+            "candidate": 30.78,
+            "threshold": 54.2,
+            "margin": 23.42,
+            "passed": true
+          },
+          "latency": {
+            "baseline": 0.4444375504126078,
+            "candidate": 0.5643445975709521,
+            "candidate_avg_ms_per_decision": 0.5643445975709521,
+            "candidate_p95_ms": 0.7424404348580851,
+            "candidate_max_ms": 0.9254237288135593,
+            "threshold": 200.0,
+            "limit_ms": 200.0,
+            "margin": 199.43565540242903,
+            "passed": true
+          },
+          "paired": null,
+          "warnings": [
+            "paired_subjects_missing"
+          ]
+        }
+      }
+    },
+    {
+      "opponent_id": "awr_iter_12",
+      "weight": 2.0,
+      "result": {
+        "accepted": false,
+        "failures": [
+          "win_rate"
+        ],
+        "failure_details": [
+          {
+            "metric": "win_rate",
+            "baseline": 3.6,
+            "candidate": 3.32,
+            "threshold": 3.6,
+            "margin": -0.28000000000000025
+          }
+        ],
+        "baseline": {
+          "seat_count": 50,
+          "avg_score_delta": 1.62,
+          "win_rate": 3.6,
+          "deal_in_rate": 2.5,
+          "avg_first_tenpai_turn": 14.78,
+          "final_tenpai_rate": 0.6,
+          "avg_claims": 25.42,
+          "avg_discards": 233.5,
+          "avg_decisions": 308.8,
+          "avg_latency_ms_per_decision": 0.40531088082901556,
+          "model_loaded_seats": 50,
+          "neural_action_count": 14800,
+          "latency_sample_count": 50,
+          "latency_ms_p50": 0.38968297509649863,
+          "latency_ms_p95": 0.5454707783005498,
+          "latency_ms_max": 0.6448863636363636
+        },
+        "candidate": {
+          "seat_count": 50,
+          "avg_score_delta": 4.8,
+          "win_rate": 3.32,
+          "deal_in_rate": 2.14,
+          "avg_first_tenpai_turn": 12.32,
+          "final_tenpai_rate": 0.64,
+          "avg_claims": 29.26,
+          "avg_discards": 232.14,
+          "avg_decisions": 305.42,
+          "avg_latency_ms_per_decision": 0.5494728570493091,
+          "model_loaded_seats": 50,
+          "neural_action_count": 14605,
+          "latency_sample_count": 50,
+          "latency_ms_p50": 0.5359836757669575,
+          "latency_ms_p95": 0.7255893399886332,
+          "latency_ms_max": 0.8701754385964913
+        },
+        "paired": null,
+        "promotion_report": {
+          "metrics": {
+            "avg_score_delta": {
+              "baseline": 1.62,
+              "candidate": 4.8,
+              "threshold": 1.62,
+              "margin": 3.1799999999999997,
+              "passed": true
+            },
+            "win_rate": {
+              "baseline": 3.6,
+              "candidate": 3.32,
+              "threshold": 3.6,
+              "margin": -0.28000000000000025,
+              "passed": false
+            },
+            "deal_in_rate": {
+              "baseline": 2.5,
+              "candidate": 2.14,
+              "threshold": 2.51,
+              "margin": 0.36999999999999966,
+              "passed": true
+            },
+            "tenpai": {
+              "baseline": {
+                "avg_first_tenpai_turn": 14.78,
+                "final_tenpai_rate": 0.6
+              },
+              "candidate": {
+                "avg_first_tenpai_turn": 12.32,
+                "final_tenpai_rate": 0.64
+              },
+              "threshold": "first_tenpai_not_later_or_final_tenpai_not_lower",
+              "margin": 2.459999999999999,
+              "first_tenpai_margin": 2.459999999999999,
+              "final_tenpai_margin": 0.040000000000000036,
+              "passed": true
+            }
+          },
+          "claim_rate": {
+            "baseline": 25.42,
+            "candidate": 29.26,
+            "threshold": 50.84,
+            "margin": 21.580000000000002,
+            "passed": true
+          },
+          "latency": {
+            "baseline": 0.40531088082901556,
+            "candidate": 0.5494728570493091,
+            "candidate_avg_ms_per_decision": 0.5494728570493091,
+            "candidate_p95_ms": 0.7255893399886332,
+            "candidate_max_ms": 0.8701754385964913,
+            "threshold": 200.0,
+            "limit_ms": 200.0,
+            "margin": 199.4505271429507,
+            "passed": true
+          },
+          "paired": null,
+          "warnings": [
+            "paired_subjects_missing"
+          ]
+        }
+      }
+    },
+    {
+      "opponent_id": "awr_iter_19",
+      "weight": 1.0,
+      "result": {
+        "accepted": false,
+        "failures": [
+          "avg_score_delta",
+          "win_rate"
+        ],
+        "failure_details": [
+          {
+            "metric": "avg_score_delta",
+            "baseline": 40.42,
+            "candidate": 29.78,
+            "threshold": 40.42,
+            "margin": -10.64
+          },
+          {
+            "metric": "win_rate",
+            "baseline": 3.9,
+            "candidate": 3.68,
+            "threshold": 3.9,
+            "margin": -0.21999999999999975
+          }
+        ],
+        "baseline": {
+          "seat_count": 50,
+          "avg_score_delta": 40.42,
+          "win_rate": 3.9,
+          "deal_in_rate": 2.36,
+          "avg_first_tenpai_turn": 16.6,
+          "final_tenpai_rate": 0.72,
+          "avg_claims": 27.36,
+          "avg_discards": 245.32,
+          "avg_decisions": 325.6,
+          "avg_latency_ms_per_decision": 0.500061425061425,
+          "model_loaded_seats": 50,
+          "neural_action_count": 15635,
+          "latency_sample_count": 50,
+          "latency_ms_p50": 0.48948061407440613,
+          "latency_ms_p95": 0.7410318161732212,
+          "latency_ms_max": 0.7797619047619048
+        },
+        "candidate": {
+          "seat_count": 50,
+          "avg_score_delta": 29.78,
+          "win_rate": 3.68,
+          "deal_in_rate": 2.28,
+          "avg_first_tenpai_turn": 13.74,
+          "final_tenpai_rate": 0.74,
+          "avg_claims": 30.84,
+          "avg_discards": 246.34,
+          "avg_decisions": 323.36,
+          "avg_latency_ms_per_decision": 0.4623948540326571,
+          "model_loaded_seats": 50,
+          "neural_action_count": 15543,
+          "latency_sample_count": 50,
+          "latency_ms_p50": 0.4526941563369593,
+          "latency_ms_p95": 0.6587818631945718,
+          "latency_ms_max": 0.8209876543209876
+        },
+        "paired": null,
+        "promotion_report": {
+          "metrics": {
+            "avg_score_delta": {
+              "baseline": 40.42,
+              "candidate": 29.78,
+              "threshold": 40.42,
+              "margin": -10.64,
+              "passed": false
+            },
+            "win_rate": {
+              "baseline": 3.9,
+              "candidate": 3.68,
+              "threshold": 3.9,
+              "margin": -0.21999999999999975,
+              "passed": false
+            },
+            "deal_in_rate": {
+              "baseline": 2.36,
+              "candidate": 2.28,
+              "threshold": 2.3699999999999997,
+              "margin": 0.08999999999999986,
+              "passed": true
+            },
+            "tenpai": {
+              "baseline": {
+                "avg_first_tenpai_turn": 16.6,
+                "final_tenpai_rate": 0.72
+              },
+              "candidate": {
+                "avg_first_tenpai_turn": 13.74,
+                "final_tenpai_rate": 0.74
+              },
+              "threshold": "first_tenpai_not_later_or_final_tenpai_not_lower",
+              "margin": 2.860000000000001,
+              "first_tenpai_margin": 2.860000000000001,
+              "final_tenpai_margin": 0.020000000000000018,
+              "passed": true
+            }
+          },
+          "claim_rate": {
+            "baseline": 27.36,
+            "candidate": 30.84,
+            "threshold": 54.72,
+            "margin": 23.88,
+            "passed": true
+          },
+          "latency": {
+            "baseline": 0.500061425061425,
+            "candidate": 0.4623948540326571,
+            "candidate_avg_ms_per_decision": 0.4623948540326571,
+            "candidate_p95_ms": 0.6587818631945718,
+            "candidate_max_ms": 0.8209876543209876,
+            "threshold": 200.0,
+            "limit_ms": 200.0,
+            "margin": 199.53760514596735,
+            "passed": true
+          },
+          "paired": null,
+          "warnings": [
+            "paired_subjects_missing"
+          ]
+        }
+      }
+    },
+    {
+      "opponent_id": "awr_iter_2",
+      "weight": 3.0,
+      "result": {
+        "accepted": true,
+        "failures": [],
+        "failure_details": [],
+        "baseline": {
+          "seat_count": 50,
+          "avg_score_delta": 77.98,
+          "win_rate": 4.54,
+          "deal_in_rate": 1.78,
+          "avg_first_tenpai_turn": 11.94,
+          "final_tenpai_rate": 0.76,
+          "avg_claims": 27.92,
+          "avg_discards": 261.26,
+          "avg_decisions": 344.02,
+          "avg_latency_ms_per_decision": 0.5293296901342945,
+          "model_loaded_seats": 50,
+          "neural_action_count": 16542,
+          "latency_sample_count": 50,
+          "latency_ms_p50": 0.48474729985984005,
+          "latency_ms_p95": 0.8038534471082216,
+          "latency_ms_max": 0.9411764705882353
+        },
+        "candidate": {
+          "seat_count": 50,
+          "avg_score_delta": 122.04,
+          "win_rate": 4.9,
+          "deal_in_rate": 1.7,
+          "avg_first_tenpai_turn": 11.62,
+          "final_tenpai_rate": 0.76,
+          "avg_claims": 31.94,
+          "avg_discards": 263.64,
+          "avg_decisions": 344.78,
+          "avg_latency_ms_per_decision": 0.4406868147804397,
+          "model_loaded_seats": 50,
+          "neural_action_count": 16576,
+          "latency_sample_count": 50,
+          "latency_ms_p50": 0.43255413332170345,
+          "latency_ms_p95": 0.6087740384615384,
+          "latency_ms_max": 0.6346153846153846
+        },
+        "paired": null,
+        "promotion_report": {
+          "metrics": {
+            "avg_score_delta": {
+              "baseline": 77.98,
+              "candidate": 122.04,
+              "threshold": 77.98,
+              "margin": 44.06,
+              "passed": true
+            },
+            "win_rate": {
+              "baseline": 4.54,
+              "candidate": 4.9,
+              "threshold": 4.54,
+              "margin": 0.3600000000000003,
+              "passed": true
+            },
+            "deal_in_rate": {
+              "baseline": 1.78,
+              "candidate": 1.7,
+              "threshold": 1.79,
+              "margin": 0.09000000000000008,
+              "passed": true
+            },
+            "tenpai": {
+              "baseline": {
+                "avg_first_tenpai_turn": 11.94,
+                "final_tenpai_rate": 0.76
+              },
+              "candidate": {
+                "avg_first_tenpai_turn": 11.62,
+                "final_tenpai_rate": 0.76
+              },
+              "threshold": "first_tenpai_not_later_or_final_tenpai_not_lower",
+              "margin": 0.3200000000000003,
+              "first_tenpai_margin": 0.3200000000000003,
+              "final_tenpai_margin": 0.0,
+              "passed": true
+            }
+          },
+          "claim_rate": {
+            "baseline": 27.92,
+            "candidate": 31.94,
+            "threshold": 55.84,
+            "margin": 23.900000000000002,
+            "passed": true
+          },
+          "latency": {
+            "baseline": 0.5293296901342945,
+            "candidate": 0.4406868147804397,
+            "candidate_avg_ms_per_decision": 0.4406868147804397,
+            "candidate_p95_ms": 0.6087740384615384,
+            "candidate_max_ms": 0.6346153846153846,
+            "threshold": 200.0,
+            "limit_ms": 200.0,
+            "margin": 199.55931318521957,
+            "passed": true
+          },
+          "paired": null,
+          "warnings": [
+            "paired_subjects_missing"
+          ]
+        }
+      }
+    },
+    {
+      "opponent_id": "sft_warm",
+      "weight": 1.0,
+      "result": {
+        "accepted": false,
+        "failures": [
+          "avg_score_delta",
+          "win_rate"
+        ],
+        "failure_details": [
+          {
+            "metric": "avg_score_delta",
+            "baseline": 53.64,
+            "candidate": 40.76,
+            "threshold": 53.64,
+            "margin": -12.880000000000003
+          },
+          {
+            "metric": "win_rate",
+            "baseline": 4.14,
+            "candidate": 4.06,
+            "threshold": 4.14,
+            "margin": -0.08000000000000007
+          }
+        ],
+        "baseline": {
+          "seat_count": 50,
+          "avg_score_delta": 53.64,
+          "win_rate": 4.14,
+          "deal_in_rate": 2.0,
+          "avg_first_tenpai_turn": 13.98,
+          "final_tenpai_rate": 0.68,
+          "avg_claims": 28.12,
+          "avg_discards": 252.92,
+          "avg_decisions": 330.8,
+          "avg_latency_ms_per_decision": 0.39921402660217653,
+          "model_loaded_seats": 50,
+          "neural_action_count": 15898,
+          "latency_sample_count": 50,
+          "latency_ms_p50": 0.4002881844380404,
+          "latency_ms_p95": 0.5756835919978469,
+          "latency_ms_max": 0.6089385474860335
+        },
+        "candidate": {
+          "seat_count": 50,
+          "avg_score_delta": 40.76,
+          "win_rate": 4.06,
+          "deal_in_rate": 1.94,
+          "avg_first_tenpai_turn": 12.84,
+          "final_tenpai_rate": 0.7,
+          "avg_claims": 31.52,
+          "avg_discards": 252.38,
+          "avg_decisions": 329.88,
+          "avg_latency_ms_per_decision": 0.5269795076997696,
+          "model_loaded_seats": 50,
+          "neural_action_count": 15870,
+          "latency_sample_count": 50,
+          "latency_ms_p50": 0.5256843594631242,
+          "latency_ms_p95": 0.702564898128038,
+          "latency_ms_max": 0.7682119205298014
+        },
+        "paired": null,
+        "promotion_report": {
+          "metrics": {
+            "avg_score_delta": {
+              "baseline": 53.64,
+              "candidate": 40.76,
+              "threshold": 53.64,
+              "margin": -12.880000000000003,
+              "passed": false
+            },
+            "win_rate": {
+              "baseline": 4.14,
+              "candidate": 4.06,
+              "threshold": 4.14,
+              "margin": -0.08000000000000007,
+              "passed": false
+            },
+            "deal_in_rate": {
+              "baseline": 2.0,
+              "candidate": 1.94,
+              "threshold": 2.01,
+              "margin": 0.06999999999999984,
+              "passed": true
+            },
+            "tenpai": {
+              "baseline": {
+                "avg_first_tenpai_turn": 13.98,
+                "final_tenpai_rate": 0.68
+              },
+              "candidate": {
+                "avg_first_tenpai_turn": 12.84,
+                "final_tenpai_rate": 0.7
+              },
+              "threshold": "first_tenpai_not_later_or_final_tenpai_not_lower",
+              "margin": 1.1400000000000006,
+              "first_tenpai_margin": 1.1400000000000006,
+              "final_tenpai_margin": 0.019999999999999907,
+              "passed": true
+            }
+          },
+          "claim_rate": {
+            "baseline": 28.12,
+            "candidate": 31.52,
+            "threshold": 56.24,
+            "margin": 24.720000000000002,
+            "passed": true
+          },
+          "latency": {
+            "baseline": 0.39921402660217653,
+            "candidate": 0.5269795076997696,
+            "candidate_avg_ms_per_decision": 0.5269795076997696,
+            "candidate_p95_ms": 0.702564898128038,
+            "candidate_max_ms": 0.7682119205298014,
+            "threshold": 200.0,
+            "limit_ms": 200.0,
+            "margin": 199.47302049230024,
+            "passed": true
+          },
+          "paired": null,
+          "warnings": [
+            "paired_subjects_missing"
+          ]
+        }
+      }
+    }
+  ],
+  "all_failures": [
+    "avg_score_delta",
+    "win_rate"
+  ]
+}

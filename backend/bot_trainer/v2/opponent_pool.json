@@ -19,7 +19,7 @@
       "model_path": "backend/assets/sft/sft.onnx",
       "sample_actions": true,
       "temperature": 1.0,
-      "weight": 2
+      "weight": 1
     },
     {
       "id": "sft_hot",

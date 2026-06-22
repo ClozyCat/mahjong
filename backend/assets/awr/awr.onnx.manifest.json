@@ -1,7 +1,7 @@
 {
-  "created_at_utc": "2026-06-17T07:38:27.285374+00:00",
-  "onnx": "output/awr_training/iter_2/awr.onnx",
-  "checkpoint": "output/awr_training/iter_2/awr_checkpoints/awr_best.pt",
+  "created_at_utc": "2026-06-19T16:27:49.305901+00:00",
+  "onnx": "output/awr_training/iter_21/awr.onnx",
+  "checkpoint": "output/awr_training/iter_21/awr_checkpoints/awr_best.pt",
   "model_config": {
     "tile_plane_count": 10,
     "scalar_feature_count": 12,
