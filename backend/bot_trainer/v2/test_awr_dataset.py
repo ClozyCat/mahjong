@@ -214,6 +214,46 @@ class TestKLDivergence:
 
 
 class TestAwrWeights:
+    def test_value_source_uses_precomputed_normalized_advantage(self):
+        returns = torch.tensor([100.0, 100.0])
+        values = torch.tensor([0.0, 0.0])
+        precomputed = torch.tensor([-1.0, 2.0])
+
+        weights, advantage = advantage_weights(
+            returns,
+            values,
+            precomputed,
+            adv_norm="per_match",
+            adv_source="value",
+            temperature=1.0,
+            weight_clip=20.0,
+            policy_filter="positive",
+        )
+
+        assert advantage.tolist() == pytest.approx([-1.0, 2.0])
+        assert weights[0].item() == pytest.approx(0.0)
+        assert weights[1].item() > 1.0
+
+    def test_return_source_ignores_precomputed_advantage(self):
+        returns = torch.tensor([-2.0, 2.0])
+        values = torch.tensor([0.0, 0.0])
+        precomputed = torch.tensor([2.0, -2.0])
+
+        weights, advantage = advantage_weights(
+            returns,
+            values,
+            precomputed,
+            adv_norm="per_match",
+            adv_source="return",
+            temperature=1.0,
+            weight_clip=20.0,
+            policy_filter="positive",
+        )
+
+        assert advantage.tolist() == pytest.approx([-2.0, 2.0])
+        assert weights[0].item() == pytest.approx(0.0)
+        assert weights[1].item() > 1.0
+
     def test_precomputed_advantage_drives_weights(self):
         returns = torch.tensor([0.0, 0.0])
         values = torch.tensor([0.0, 0.0])

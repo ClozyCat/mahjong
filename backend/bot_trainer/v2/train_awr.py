@@ -33,7 +33,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--adv-norm", default="per_match",
                         choices=["none", "per_match", "per_player", "batch"],
                         help="Advantage normalization mode")
-    parser.add_argument("--adv-source", default="return",
+    parser.add_argument("--adv-source", default="value",
                         choices=["value", "terminal", "return"],
                         help="value = return - V(s); terminal = terminal_reward only; return = MC return directly")
     parser.add_argument("--head-weights", default="1.0,3.0,5.0,5.0",
@@ -57,9 +57,6 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--seed", type=int, default=42)
     parser.add_argument("--grad-clip-norm", type=float, default=1.0)
     return parser.parse_args()
-
-
-_best_value_ev_state = {"ev": -1.0}
 
 
 def compute_ce_loss_for_action(
@@ -156,6 +153,7 @@ def main() -> None:
     args = parse_args()
     torch.manual_seed(args.seed)
     device = torch.device(args.device if torch.cuda.is_available() else "cpu")
+    best_value_ev = -1.0
 
     ds = ArenaTrajectoryDataset(args.trajectories, gamma=args.gamma, policy_id=args.policy_id)
 
@@ -341,8 +339,8 @@ def main() -> None:
         )
 
         # Track best checkpoint by value_ev
-        if explained_var > _best_value_ev_state["ev"]:
-            _best_value_ev_state["ev"] = explained_var
+        if explained_var > best_value_ev:
+            best_value_ev = explained_var
             torch.save(
                 {
                     "model_state": {k: v.clone() for k, v in model.state_dict().items()},
@@ -361,6 +359,7 @@ def main() -> None:
             )
 
     # Value-only fine-tune: freeze policy, train value head aggressively
+    value_finetuned = False
     if args.value_finetune_epochs > 0:
         print("Value fine-tune: freezing policy, training value head...")
         for name, param in model.named_parameters():
@@ -390,24 +389,28 @@ def main() -> None:
             print(f"  value_ft epoch {ve+1}: mse={avg_vl:.6f} ev={vev:.4f}")
             avg_value = avg_vl
             explained_var = vev
+        value_finetuned = True
 
-    if _best_value_ev_state["ev"] < 0:
+    if value_finetuned or best_value_ev < 0:
         torch.save(
             {
                 "model_state": model.state_dict(),
                 "model_config": model_config.to_dict(),
                 "training_source": "awr",
                 "created_at_utc": datetime.now(UTC).isoformat(),
+                "awr_epoch": args.epochs,
                 "awr_metrics": {
                     "policy_loss": avg_policy,
                     "value_mse": avg_value,
                     "value_explained_variance": explained_var,
                     "kl_loss": avg_kl,
+                    "value_finetune_epochs": args.value_finetune_epochs,
                 },
             },
             args.output_dir / "awr_best.pt",
         )
-    print(f"Saved to {args.output_dir} (best value_ev={_best_value_ev_state['ev']:.4f})")
+        best_value_ev = max(best_value_ev, explained_var)
+    print(f"Saved to {args.output_dir} (best value_ev={best_value_ev:.4f})")
 
 
 if __name__ == "__main__":
