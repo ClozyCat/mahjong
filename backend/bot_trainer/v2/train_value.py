@@ -3,6 +3,7 @@ from __future__ import annotations
 import argparse
 from datetime import UTC, datetime
 from pathlib import Path
+from typing import Any
 
 import torch
 import torch.nn.functional as F
@@ -41,11 +42,37 @@ def parse_args() -> argparse.Namespace:
                         help="Weight for auxiliary score bucket classification loss")
     parser.add_argument("--val-fraction", type=float, default=0.1,
                         help="Fraction of match IDs held out for value validation")
+    parser.add_argument("--early-stop-patience", type=int, default=5,
+                        help="Stop value pretraining after N epochs without selection EV improvement")
     parser.add_argument("--policy-id", default=None,
                         help="Only train on this policy's data")
     parser.add_argument("--device", default="cuda")
     parser.add_argument("--seed", type=int, default=42)
     return parser.parse_args()
+
+
+class BestValueCheckpoint:
+    def __init__(self, patience: int) -> None:
+        self.patience = max(0, patience)
+        self.best_score = float("-inf")
+        self.best_epoch = 0
+        self.epochs_without_improvement = 0
+        self.should_stop = False
+
+    def update(self, *, epoch: int, train_ev: float, val_ev: float | None) -> bool:
+        score = val_ev if val_ev is not None else train_ev
+        if score > self.best_score:
+            self.best_score = score
+            self.best_epoch = epoch
+            self.epochs_without_improvement = 0
+            self.should_stop = False
+            return True
+        self.epochs_without_improvement += 1
+        self.should_stop = (
+            self.patience > 0
+            and self.epochs_without_improvement >= self.patience
+        )
+        return False
 
 
 def main() -> None:
@@ -88,6 +115,8 @@ def main() -> None:
     model.train()
     val_mse = None
     val_ev = None
+    best_tracker = BestValueCheckpoint(args.early_stop_patience)
+    best_payload: dict[str, Any] | None = None
     for epoch in range(args.epochs):
         total_value_loss = 0.0
         total_score_loss = 0.0
@@ -136,24 +165,57 @@ def main() -> None:
             f"value_ev={value_ev:.4f}{val_text} score_ce={avg_score:.6f}"
         )
 
+        metrics = {
+            "final_mse": avg_value,
+            "final_explained_variance": value_ev,
+            "final_val_mse": val_mse,
+            "final_val_explained_variance": val_ev,
+            "final_score_ce": avg_score,
+            "best_epoch": epoch + 1,
+            "selection_metric": "val_ev" if val_ev is not None else "train_ev",
+        }
+        if best_tracker.update(epoch=epoch + 1, train_ev=value_ev, val_ev=val_ev):
+            best_payload = value_checkpoint_payload(model, model_config, metrics)
+            print(
+                f"  best value checkpoint: epoch={best_tracker.best_epoch} "
+                f"selection_ev={best_tracker.best_score:.4f}"
+            )
+        elif best_tracker.should_stop:
+            print(
+                f"Early stopping value pretrain at epoch {epoch+1}; "
+                f"best_epoch={best_tracker.best_epoch} "
+                f"best_selection_ev={best_tracker.best_score:.4f}"
+            )
+            break
+
     args.output.parent.mkdir(parents=True, exist_ok=True)
-    torch.save(
-        {
-            "model_state": model.state_dict(),
-            "model_config": model_config.to_dict(),
-            "training_source": "value_pretrain",
-            "created_at_utc": datetime.now(UTC).isoformat(),
-            "value_metrics": {
-                "final_mse": avg_value,
-                "final_explained_variance": value_ev,
-                "final_val_mse": val_mse,
-                "final_val_explained_variance": val_ev,
-                "final_score_ce": avg_score,
-            },
-        },
-        args.output,
-    )
+    if best_payload is None:
+        metrics = {
+            "final_mse": avg_value,
+            "final_explained_variance": value_ev,
+            "final_val_mse": val_mse,
+            "final_val_explained_variance": val_ev,
+            "final_score_ce": avg_score,
+            "best_epoch": args.epochs,
+            "selection_metric": "val_ev" if val_ev is not None else "train_ev",
+        }
+        best_payload = value_checkpoint_payload(model, model_config, metrics)
+    torch.save(best_payload, args.output)
     print(f"Saved value-pretrained checkpoint to {args.output}")
+
+
+def value_checkpoint_payload(
+    model: torch.nn.Module,
+    model_config: ModelConfig,
+    metrics: dict[str, Any],
+) -> dict[str, Any]:
+    return {
+        "model_state": {k: v.detach().cpu().clone() for k, v in model.state_dict().items()},
+        "model_config": model_config.to_dict(),
+        "training_source": "value_pretrain",
+        "created_at_utc": datetime.now(UTC).isoformat(),
+        "value_metrics": metrics,
+    }
 
 
 def evaluate_value_mse(

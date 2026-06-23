@@ -216,7 +216,8 @@ def main() -> None:
             "--checkpoint", str(base_ckpt),
             "--output", str(value_ckpt),
             "--batch-size", "512",
-            "--lr", "1e-3",
+            "--lr", "5e-4",
+            "--early-stop-patience", "5",
             "--policy-id", "learner",
         ])
 

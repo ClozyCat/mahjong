@@ -22,6 +22,7 @@ from awr_dataset import (
     trajectory_diagnostics,
 )
 from arena_summary import paired_subject_deltas
+from train_value import BestValueCheckpoint
 
 
 def make_sample_row(**overrides) -> dict:
@@ -464,3 +465,24 @@ def make_gate_summary(
         },
         "paired_subjects": paired or {},
     }
+
+
+class TestBestValueCheckpoint:
+    def test_uses_validation_ev_for_selection_when_available(self):
+        tracker = BestValueCheckpoint(patience=2)
+
+        assert tracker.update(epoch=1, train_ev=0.1, val_ev=0.0) is True
+        assert tracker.update(epoch=2, train_ev=0.2, val_ev=-0.1) is False
+
+        assert tracker.best_epoch == 1
+        assert tracker.best_score == pytest.approx(0.0)
+        assert tracker.should_stop is False
+
+    def test_stops_after_patience_without_improvement(self):
+        tracker = BestValueCheckpoint(patience=2)
+
+        tracker.update(epoch=1, train_ev=0.1, val_ev=0.1)
+        tracker.update(epoch=2, train_ev=0.2, val_ev=0.0)
+        tracker.update(epoch=3, train_ev=0.3, val_ev=-0.1)
+
+        assert tracker.should_stop is True
