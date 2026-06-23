@@ -10,7 +10,9 @@ from train_awr import (
     advantage_weights,
     compute_ce_loss_for_action,
     masked_categorical_kl,
+    restore_export_value_head,
 )
+from model import ModelConfig, build_model
 from candidate_gate import evaluate_candidate, evaluate_candidate_matrix
 from awr_dataset import (
     ArenaTrajectoryDataset,
@@ -346,6 +348,27 @@ class TestAwrDiagnostics:
         assert metrics["weight_max"] == pytest.approx(4.0)
         assert metrics["active_weight_rate"] == pytest.approx(2.0 / 3.0)
         assert metrics["adv_std"] > 0.0
+
+
+class TestAwrExportValueHead:
+    def test_restores_sft_value_head_without_touching_policy_weights(self):
+        config = ModelConfig()
+        awr_model = build_model(config)
+        sft_model = build_model(config)
+
+        awr_state = awr_model.state_dict()
+        sft_state = sft_model.state_dict()
+        for name in awr_state:
+            awr_state[name] = torch.full_like(awr_state[name], 1.0)
+            sft_state[name] = torch.full_like(sft_state[name], 2.0)
+
+        restored = restore_export_value_head(
+            checkpoint_state=awr_state,
+            risk_checkpoint_state=sft_state,
+        )
+
+        assert torch.equal(restored["value_head.net.0.weight"], sft_state["value_head.net.0.weight"])
+        assert torch.equal(restored["discard_head.net.0.weight"], awr_state["discard_head.net.0.weight"])
 
 
 class TestCandidateGatePairedSubjects:

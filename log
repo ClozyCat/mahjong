@@ -1,0 +1,939 @@
+=== AWR Training Pipeline ===
+Iterations: 3, TrajectoryMatches: 400, Seed: 20260623
+Working dir: C:\Users\ZY\Desktop\Projects\dist\mahjong
+Copied pool: backend/bot_trainer/v2/opponent_pool.json -> output\awr_training\working_pool.json
+
+--- Iteration 1/3 ---
+[1/4] Generating trajectories...
+  RUN: C:\Python314\python.exe backend/bot_trainer/v2/league_config.py --pool output\awr_training\working_pool.json --output-dir output\awr_training\iter_0\configs --matches 400 --seed 20260623 --mode trajectory --trajectory-chunk-matches 50 --rollout-onnx backend/assets/sft/sft.onnx
+  RUN: cargo run --release --manifest-path backend/Cargo.toml --bin bot_arena -- --config output\awr_training\iter_0\configs\trajectory_config_0.json --output output\awr_training\iter_0\trajectory_summary_trajectory_config_0.json --trajectories output\awr_training\iter_0\trajectories_trajectory_config_0.jsonl --jobs 4
+    Finished `release` profile [optimized] target(s) in 0.20s
+     Running `backend\target\release\bot_arena.exe --config output\awr_training\iter_0\configs\trajectory_config_0.json --output output\awr_training\iter_0\trajectory_summary_trajectory_config_0.json --trajectories output\awr_training\iter_0\trajectories_trajectory_config_0.jsonl --jobs 4`
+[timing] match=0 actions=1571  inference=2214.6ms (76%)  game=372.8ms (13%)  trajectory=317.7ms (11%)
+[timing_detail] encode=0.011ms inference=1.412ms sample=0.002ms  (per-action, n=1213)
+[timing] match=10 actions=1490  inference=2319.7ms (72%)  game=429.1ms (13%)  trajectory=460.8ms (14%)
+[timing_detail] encode=0.012ms inference=1.531ms sample=0.002ms  (per-action, n=1143)
+[timing] match=20 actions=1264  inference=1558.3ms (74%)  game=303.6ms (14%)  trajectory=257.4ms (12%)
+[timing_detail] encode=0.010ms inference=1.212ms sample=0.002ms  (per-action, n=988)
+[timing] match=30 actions=1587  inference=1918.2ms (71%)  game=401.2ms (15%)  trajectory=370.9ms (14%)
+[timing_detail] encode=0.010ms inference=1.185ms sample=0.002ms  (per-action, n=1226)
+[timing] match=40 actions=1493  inference=1872.6ms (70%)  game=397.7ms (15%)  trajectory=387.7ms (15%)
+[timing_detail] encode=0.010ms inference=1.232ms sample=0.002ms  (per-action, n=1159)
+  RUN: cargo run --release --manifest-path backend/Cargo.toml --bin bot_arena -- --config output\awr_training\iter_0\configs\trajectory_config_1.json --output output\awr_training\iter_0\trajectory_summary_trajectory_config_1.json --trajectories output\awr_training\iter_0\trajectories_trajectory_config_1.jsonl --jobs 4
+    Finished `release` profile [optimized] target(s) in 0.21s
+     Running `backend\target\release\bot_arena.exe --config output\awr_training\iter_0\configs\trajectory_config_1.json --output output\awr_training\iter_0\trajectory_summary_trajectory_config_1.json --trajectories output\awr_training\iter_0\trajectories_trajectory_config_1.jsonl --jobs 4`
+[timing] match=0 actions=1434  inference=1523.2ms (76%)  game=251.2ms (13%)  trajectory=232.2ms (12%)
+[timing_detail] encode=0.009ms inference=1.068ms sample=0.001ms  (per-action, n=1124)
+[timing] match=10 actions=1320  inference=1375.5ms (75%)  game=236.7ms (13%)  trajectory=219.1ms (12%)
+[timing_detail] encode=0.009ms inference=1.031ms sample=0.002ms  (per-action, n=1024)
+[timing] match=20 actions=1196  inference=1416.5ms (74%)  game=275.6ms (14%)  trajectory=226.2ms (12%)
+[timing_detail] encode=0.009ms inference=1.166ms sample=0.002ms  (per-action, n=932)
+[timing] match=30 actions=1158  inference=1456.4ms (72%)  game=289.0ms (14%)  trajectory=269.7ms (13%)
+[timing_detail] encode=0.009ms inference=1.215ms sample=0.002ms  (per-action, n=863)
+[timing] match=40 actions=1470  inference=1858.3ms (70%)  game=403.2ms (15%)  trajectory=384.6ms (15%)
+[timing_detail] encode=0.010ms inference=1.225ms sample=0.002ms  (per-action, n=1162)
+  RUN: cargo run --release --manifest-path backend/Cargo.toml --bin bot_arena -- --config output\awr_training\iter_0\configs\trajectory_config_2.json --output output\awr_training\iter_0\trajectory_summary_trajectory_config_2.json --trajectories output\awr_training\iter_0\trajectories_trajectory_config_2.jsonl --jobs 4
+    Finished `release` profile [optimized] target(s) in 0.21s
+     Running `backend\target\release\bot_arena.exe --config output\awr_training\iter_0\configs\trajectory_config_2.json --output output\awr_training\iter_0\trajectory_summary_trajectory_config_2.json --trajectories output\awr_training\iter_0\trajectories_trajectory_config_2.jsonl --jobs 4`
+[timing] match=0 actions=1449  inference=2364.9ms (72%)  game=413.0ms (13%)  trajectory=495.7ms (15%)
+[timing_detail] encode=0.012ms inference=1.622ms sample=0.002ms  (per-action, n=1111)
+[timing] match=10 actions=1193  inference=1738.5ms (71%)  game=320.9ms (13%)  trajectory=374.0ms (15%)
+[timing_detail] encode=0.010ms inference=1.429ms sample=0.002ms  (per-action, n=910)
+[timing] match=20 actions=1206  inference=1198.3ms (74%)  game=212.7ms (13%)  trajectory=202.0ms (13%)
+[timing_detail] encode=0.008ms inference=0.983ms sample=0.001ms  (per-action, n=925)
+[timing] match=30 actions=1235  inference=1338.9ms (73%)  game=274.5ms (15%)  trajectory=222.6ms (12%)
+[timing_detail] encode=0.009ms inference=1.068ms sample=0.002ms  (per-action, n=950)
+[timing] match=40 actions=1284  inference=1334.2ms (70%)  game=272.4ms (14%)  trajectory=291.2ms (15%)
+[timing_detail] encode=0.009ms inference=1.016ms sample=0.001ms  (per-action, n=992)
+  RUN: cargo run --release --manifest-path backend/Cargo.toml --bin bot_arena -- --config output\awr_training\iter_0\configs\trajectory_config_3.json --output output\awr_training\iter_0\trajectory_summary_trajectory_config_3.json --trajectories output\awr_training\iter_0\trajectories_trajectory_config_3.jsonl --jobs 4
+    Finished `release` profile [optimized] target(s) in 0.19s
+     Running `backend\target\release\bot_arena.exe --config output\awr_training\iter_0\configs\trajectory_config_3.json --output output\awr_training\iter_0\trajectory_summary_trajectory_config_3.json --trajectories output\awr_training\iter_0\trajectories_trajectory_config_3.jsonl --jobs 4`
+[timing] match=0 actions=1048  inference=1101.2ms (77%)  game=175.9ms (12%)  trajectory=161.7ms (11%)
+[timing_detail] encode=0.008ms inference=1.053ms sample=0.001ms  (per-action, n=816)
+[timing] match=10 actions=1401  inference=1614.6ms (74%)  game=280.2ms (13%)  trajectory=288.8ms (13%)
+[timing_detail] encode=0.010ms inference=1.128ms sample=0.002ms  (per-action, n=1091)
+[timing] match=20 actions=1428  inference=1563.5ms (72%)  game=308.7ms (14%)  trajectory=298.7ms (14%)
+[timing_detail] encode=0.009ms inference=1.079ms sample=0.002ms  (per-action, n=1102)
+[timing] match=30 actions=1281  inference=1462.2ms (72%)  game=305.7ms (15%)  trajectory=262.4ms (13%)
+[timing_detail] encode=0.009ms inference=1.113ms sample=0.002ms  (per-action, n=1001)
+[timing] match=40 actions=1447  inference=1685.3ms (71%)  game=355.9ms (15%)  trajectory=324.8ms (14%)
+[timing_detail] encode=0.010ms inference=1.138ms sample=0.002ms  (per-action, n=1131)
+  RUN: cargo run --release --manifest-path backend/Cargo.toml --bin bot_arena -- --config output\awr_training\iter_0\configs\trajectory_config_4.json --output output\awr_training\iter_0\trajectory_summary_trajectory_config_4.json --trajectories output\awr_training\iter_0\trajectories_trajectory_config_4.jsonl --jobs 4
+    Finished `release` profile [optimized] target(s) in 0.18s
+     Running `backend\target\release\bot_arena.exe --config output\awr_training\iter_0\configs\trajectory_config_4.json --output output\awr_training\iter_0\trajectory_summary_trajectory_config_4.json --trajectories output\awr_training\iter_0\trajectories_trajectory_config_4.jsonl --jobs 4`
+[timing] match=0 actions=1270  inference=1248.7ms (76%)  game=196.5ms (12%)  trajectory=194.1ms (12%)
+[timing_detail] encode=0.009ms inference=0.999ms sample=0.001ms  (per-action, n=969)
+[timing] match=10 actions=1325  inference=1258.1ms (75%)  game=207.0ms (12%)  trajectory=206.1ms (12%)
+[timing_detail] encode=0.008ms inference=0.942ms sample=0.001ms  (per-action, n=999)
+[timing] match=20 actions=1385  inference=1281.4ms (75%)  game=233.6ms (14%)  trajectory=198.2ms (12%)
+[timing_detail] encode=0.009ms inference=0.918ms sample=0.001ms  (per-action, n=1079)
+[timing] match=30 actions=1465  inference=1496.6ms (72%)  game=303.9ms (15%)  trajectory=278.0ms (13%)
+[timing_detail] encode=0.010ms inference=1.006ms sample=0.001ms  (per-action, n=1125)
+[timing] match=40 actions=1360  inference=1362.3ms (73%)  game=274.0ms (15%)  trajectory=229.4ms (12%)
+[timing_detail] encode=0.009ms inference=0.979ms sample=0.001ms  (per-action, n=1065)
+  RUN: cargo run --release --manifest-path backend/Cargo.toml --bin bot_arena -- --config output\awr_training\iter_0\configs\trajectory_config_5.json --output output\awr_training\iter_0\trajectory_summary_trajectory_config_5.json --trajectories output\awr_training\iter_0\trajectories_trajectory_config_5.jsonl --jobs 4
+    Finished `release` profile [optimized] target(s) in 0.16s
+     Running `backend\target\release\bot_arena.exe --config output\awr_training\iter_0\configs\trajectory_config_5.json --output output\awr_training\iter_0\trajectory_summary_trajectory_config_5.json --trajectories output\awr_training\iter_0\trajectories_trajectory_config_5.jsonl --jobs 4`
+[timing] match=0 actions=1448  inference=1462.2ms (76%)  game=242.5ms (13%)  trajectory=225.1ms (12%)
+[timing_detail] encode=0.009ms inference=1.016ms sample=0.001ms  (per-action, n=1113)
+[timing] match=10 actions=1482  inference=1549.7ms (75%)  game=274.8ms (13%)  trajectory=233.2ms (11%)
+[timing_detail] encode=0.009ms inference=1.039ms sample=0.001ms  (per-action, n=1143)
+[timing] match=20 actions=1405  inference=1492.5ms (74%)  game=297.8ms (15%)  trajectory=237.1ms (12%)
+[timing_detail] encode=0.009ms inference=1.029ms sample=0.001ms  (per-action, n=1106)
+[timing] match=30 actions=1490  inference=1590.0ms (73%)  game=328.6ms (15%)  trajectory=257.8ms (12%)
+[timing_detail] encode=0.009ms inference=1.051ms sample=0.002ms  (per-action, n=1168)
+[timing] match=40 actions=1338  inference=1310.5ms (72%)  game=272.7ms (15%)  trajectory=224.8ms (12%)
+[timing_detail] encode=0.009ms inference=0.966ms sample=0.001ms  (per-action, n=1037)
+  RUN: cargo run --release --manifest-path backend/Cargo.toml --bin bot_arena -- --config output\awr_training\iter_0\configs\trajectory_config_6.json --output output\awr_training\iter_0\trajectory_summary_trajectory_config_6.json --trajectories output\awr_training\iter_0\trajectories_trajectory_config_6.jsonl --jobs 4
+    Finished `release` profile [optimized] target(s) in 0.18s
+     Running `backend\target\release\bot_arena.exe --config output\awr_training\iter_0\configs\trajectory_config_6.json --output output\awr_training\iter_0\trajectory_summary_trajectory_config_6.json --trajectories output\awr_training\iter_0\trajectories_trajectory_config_6.jsonl --jobs 4`
+[timing] match=0 actions=1339  inference=1319.7ms (76%)  game=212.0ms (12%)  trajectory=201.7ms (12%)
+[timing_detail] encode=0.009ms inference=0.983ms sample=0.001ms  (per-action, n=1044)
+[timing] match=10 actions=1488  inference=1415.0ms (75%)  game=243.0ms (13%)  trajectory=235.9ms (12%)
+[timing_detail] encode=0.009ms inference=0.939ms sample=0.001ms  (per-action, n=1148)
+[timing] match=20 actions=1461  inference=1467.4ms (72%)  game=280.2ms (14%)  trajectory=293.6ms (14%)
+[timing_detail] encode=0.009ms inference=0.986ms sample=0.001ms  (per-action, n=1124)
+[timing] match=30 actions=1264  inference=1422.9ms (71%)  game=295.5ms (15%)  trajectory=279.0ms (14%)
+[timing_detail] encode=0.009ms inference=1.094ms sample=0.002ms  (per-action, n=988)
+[timing] match=40 actions=1421  inference=1681.8ms (70%)  game=358.4ms (15%)  trajectory=349.4ms (15%)
+[timing_detail] encode=0.010ms inference=1.166ms sample=0.002ms  (per-action, n=1081)
+  RUN: cargo run --release --manifest-path backend/Cargo.toml --bin bot_arena -- --config output\awr_training\iter_0\configs\trajectory_config_7.json --output output\awr_training\iter_0\trajectory_summary_trajectory_config_7.json --trajectories output\awr_training\iter_0\trajectories_trajectory_config_7.jsonl --jobs 4
+    Finished `release` profile [optimized] target(s) in 0.18s
+     Running `backend\target\release\bot_arena.exe --config output\awr_training\iter_0\configs\trajectory_config_7.json --output output\awr_training\iter_0\trajectory_summary_trajectory_config_7.json --trajectories output\awr_training\iter_0\trajectories_trajectory_config_7.jsonl --jobs 4`
+[timing] match=0 actions=1382  inference=1576.2ms (74%)  game=258.6ms (12%)  trajectory=299.7ms (14%)
+[timing_detail] encode=0.009ms inference=1.152ms sample=0.002ms  (per-action, n=1070)
+[timing] match=10 actions=1139  inference=1341.7ms (74%)  game=232.0ms (13%)  trajectory=233.8ms (13%)
+[timing_detail] encode=0.009ms inference=1.165ms sample=0.002ms  (per-action, n=863)
+[timing] match=20 actions=1344  inference=1590.0ms (71%)  game=316.3ms (14%)  trajectory=330.0ms (15%)
+[timing_detail] encode=0.010ms inference=1.164ms sample=0.002ms  (per-action, n=1044)
+[timing] match=30 actions=1497  inference=1655.5ms (70%)  game=346.7ms (15%)  trajectory=364.1ms (15%)
+[timing_detail] encode=0.010ms inference=1.087ms sample=0.002ms  (per-action, n=1163)
+[timing] match=40 actions=1190  inference=1295.1ms (72%)  game=255.5ms (14%)  trajectory=259.9ms (14%)
+[timing_detail] encode=0.009ms inference=1.067ms sample=0.002ms  (per-action, n=903)
+[2/4] Pretraining value head...
+  RUN: C:\Python314\python.exe backend/bot_trainer/v2/train_value.py --trajectories output\awr_training\iter_0\trajectories.jsonl --checkpoint backend\bot_trainer\v2\checkpoints\best.pt --output output\awr_training\iter_0\value_pretrained.pt --batch-size 512 --lr 5e-4 --early-stop-patience 5 --policy-id learner
+Value epoch 1/30: 100%|████████████████████████████████████████████████████████████████████████████████████████████████████████████████| 233/233 [00:27<00:00,  8.51it/s]
+Epoch 1: value_mse=1.265493 value_ev=-0.0092 val_mse=1.167726 val_ev=0.0276 score_ce=0.000000
+  best value checkpoint: epoch=1 selection_ev=0.0276
+Value epoch 2/30: 100%|████████████████████████████████████████████████████████████████████████████████████████████████████████████████| 233/233 [00:29<00:00,  7.87it/s]
+Epoch 2: value_mse=1.223629 value_ev=0.0242 val_mse=1.163963 val_ev=0.0307 score_ce=0.000000
+  best value checkpoint: epoch=2 selection_ev=0.0307
+Value epoch 3/30: 100%|████████████████████████████████████████████████████████████████████████████████████████████████████████████████| 233/233 [00:26<00:00,  8.84it/s]
+Epoch 3: value_mse=1.215689 value_ev=0.0306 val_mse=1.168649 val_ev=0.0268 score_ce=0.000000
+Value epoch 4/30: 100%|████████████████████████████████████████████████████████████████████████████████████████████████████████████████| 233/233 [00:19<00:00, 11.84it/s]
+Epoch 4: value_mse=1.208467 value_ev=0.0363 val_mse=1.154652 val_ev=0.0385 score_ce=0.000000
+  best value checkpoint: epoch=4 selection_ev=0.0385
+Value epoch 5/30: 100%|████████████████████████████████████████████████████████████████████████████████████████████████████████████████| 233/233 [00:20<00:00, 11.35it/s]
+Epoch 5: value_mse=1.201555 value_ev=0.0418 val_mse=1.155308 val_ev=0.0379 score_ce=0.000000
+Value epoch 6/30: 100%|████████████████████████████████████████████████████████████████████████████████████████████████████████████████| 233/233 [00:19<00:00, 11.78it/s]
+Epoch 6: value_mse=1.196125 value_ev=0.0462 val_mse=1.162343 val_ev=0.0321 score_ce=0.000000
+Value epoch 7/30: 100%|████████████████████████████████████████████████████████████████████████████████████████████████████████████████| 233/233 [00:19<00:00, 11.78it/s]
+Epoch 7: value_mse=1.191721 value_ev=0.0497 val_mse=1.160227 val_ev=0.0338 score_ce=0.000000
+Value epoch 8/30: 100%|████████████████████████████████████████████████████████████████████████████████████████████████████████████████| 233/233 [00:20<00:00, 11.51it/s]
+Epoch 8: value_mse=1.185749 value_ev=0.0544 val_mse=1.163169 val_ev=0.0314 score_ce=0.000000
+Value epoch 9/30: 100%|████████████████████████████████████████████████████████████████████████████████████████████████████████████████| 233/233 [00:19<00:00, 11.81it/s]
+Epoch 9: value_mse=1.180072 value_ev=0.0590 val_mse=1.161375 val_ev=0.0329 score_ce=0.000000
+Early stopping value pretrain at epoch 9; best_epoch=4 best_selection_ev=0.0385
+Saved value-pretrained checkpoint to output\awr_training\iter_0\value_pretrained.pt
+[3/4] Running AWR training...
+  RUN: C:\Python314\python.exe backend/bot_trainer/v2/train_awr.py --trajectories output\awr_training\iter_0\trajectories.jsonl --checkpoint output\awr_training\iter_0\value_pretrained.pt --output-dir output\awr_training\iter_0\awr_checkpoints --epochs 3 --value-finetune-epochs 3 --batch-size 512 --lr 3e-5 --temperature 1.0 --weight-clip 10.0 --adv-source value --sft-checkpoint backend\bot_trainer\v2\checkpoints\best.pt --policy-id learner
+AWR epoch 1/3: 100%|███████████████████████████████████████████████████████████████████████████████████████████████████████████████████| 233/233 [00:27<00:00,  8.59it/s]
+Epoch 1: policy_loss=0.493495 value_mse=1.190920 value_ev=0.0503 kl_loss=0.011961 val_mse=1.123106 val_ev=0.0647 fan_d=0.001082 fanv_d=0.000720 adv_mean=0.0000 adv_std=1.0000 adv_pos=0.5153 weight_mean=1.3361 weight_max=10.0000 active_weight=0.5153 samples=118901
+AWR epoch 2/3: 100%|███████████████████████████████████████████████████████████████████████████████████████████████████████████████████| 233/233 [00:25<00:00,  9.26it/s]
+Epoch 2: policy_loss=0.445993 value_mse=1.150037 value_ev=0.0829 kl_loss=0.014397 val_mse=1.094468 val_ev=0.0886 fan_d=0.001198 fanv_d=0.000793 adv_mean=0.0000 adv_std=1.0000 adv_pos=0.5153 weight_mean=1.3361 weight_max=10.0000 active_weight=0.5153 samples=118901
+AWR epoch 3/3: 100%|███████████████████████████████████████████████████████████████████████████████████████████████████████████████████| 233/233 [00:23<00:00,  9.88it/s]
+Epoch 3: policy_loss=0.433632 value_mse=1.112402 value_ev=0.1129 kl_loss=0.016678 val_mse=1.070266 val_ev=0.1087 fan_d=0.001315 fanv_d=0.000860 adv_mean=0.0000 adv_std=1.0000 adv_pos=0.5153 weight_mean=1.3361 weight_max=10.0000 active_weight=0.5153 samples=118901
+Value fine-tune: freezing policy, training value head...
+  value_ft epoch 1: mse=1.099114 ev=0.1235
+  value_ft epoch 2: mse=1.090820 ev=0.1301
+  value_ft epoch 3: mse=1.085339 ev=0.1345
+Saved to output\awr_training\iter_0\awr_checkpoints (best value_ev=0.1345)
+[4/4] Exporting AWR ONNX...
+  RUN: C:\Python314\python.exe backend/bot_trainer/v2/export_onnx.py --checkpoint output\awr_training\iter_0\awr_checkpoints\awr_best.pt --output output\awr_training\iter_0\awr.onnx
+[torch.onnx] Obtain model graph for `OnnxWrapper([...]` with `torch.export.export(..., strict=False)`...
+W0623 15:51:39.541000 31872 site-packages\torch\utils\flop_counter.py:29] triton not found; flop counting will not work for triton kernels
+[torch.onnx] Obtain model graph for `OnnxWrapper([...]` with `torch.export.export(..., strict=False)`... ✅
+[torch.onnx] Run decompositions...
+[torch.onnx] Run decompositions... ✅
+[torch.onnx] Translate the graph into ONNX...
+[torch.onnx] Translate the graph into ONNX... ✅
+[torch.onnx] Optimize the ONNX graph...
+Skipping constant folding for op Split with multiple outputs.
+Skipping constant folding for op Split with multiple outputs.
+[torch.onnx] Optimize the ONNX graph... ✅
+exported output\awr_training\iter_0\awr.onnx
+Evaluating candidate vs multiple opponents...
+  RUN: C:\Python314\python.exe backend/bot_trainer/v2/league_config.py --pool output\awr_training\working_pool.json --output-dir output\awr_training\iter_0\matrix_config --matches 20 --seed 20260625 --mode matrix --candidate-onnx output\awr_training\iter_0\awr.onnx --baseline-onnx backend/assets/sft/sft.onnx
+  RUN: cargo run --release --manifest-path backend/Cargo.toml --bin bot_arena -- --config output\awr_training\iter_0\matrix_config\matrix_config_0.json --output output\awr_training\iter_0\matrix_result_matrix_config_0.jsonl
+    Finished `release` profile [optimized] target(s) in 0.17s
+     Running `backend\target\release\bot_arena.exe --config output\awr_training\iter_0\matrix_config\matrix_config_0.json --output output\awr_training\iter_0\matrix_result_matrix_config_0.jsonl`
+[timing] match=0 actions=1254  inference=842.3ms (85%)  game=144.1ms (15%)  trajectory=0.1ms (0%)
+[timing_detail] encode=0.008ms inference=0.661ms sample=0.002ms  (per-action, n=957)
+[timing] match=10 actions=1351  inference=912.7ms (85%)  game=155.3ms (15%)  trajectory=0.1ms (0%)
+[timing_detail] encode=0.007ms inference=0.669ms sample=0.002ms  (per-action, n=1024)
+[timing] match=0 actions=1406  inference=1038.9ms (85%)  game=180.4ms (15%)  trajectory=0.1ms (0%)
+[timing_detail] encode=0.008ms inference=0.726ms sample=0.002ms  (per-action, n=1083)
+[timing] match=10 actions=1334  inference=1004.4ms (85%)  game=173.2ms (15%)  trajectory=0.1ms (0%)
+[timing_detail] encode=0.007ms inference=0.746ms sample=0.002ms  (per-action, n=1018)
+  RUN: C:\Python314\python.exe backend/bot_trainer/v2/arena_summary.py --input output\awr_training\iter_0\matrix_result_matrix_config_0.jsonl --output output\awr_training\iter_0\matrix_summary_matrix_config_0.json
+Arena summary: matches=40 completed=40
+  awr_candidate_neural: avg_score_delta=-37.3000 win_rate=3.0500 deal_in_rate=2.4000 avg_first_tenpai_turn=11.90 final_tenpai_rate=0.5500 avg_latency_ms_per_decision=0.14 latency_ms_p95=0.16 model_loaded_seats=20 neural_action_count=6210
+  baseline_neural: avg_score_delta=-65.7000 win_rate=2.5500 deal_in_rate=2.8000 avg_first_tenpai_turn=12.50 final_tenpai_rate=0.5500 avg_latency_ms_per_decision=0.06 latency_ms_p95=0.08 model_loaded_seats=20 neural_action_count=6277
+  sft_cold-opponent-1: avg_score_delta=-5.4000 win_rate=3.3250 deal_in_rate=2.4750 avg_first_tenpai_turn=14.12 final_tenpai_rate=0.6000 avg_latency_ms_per_decision=0.07 latency_ms_p95=0.10 model_loaded_seats=40 neural_action_count=12472
+  sft_cold-opponent-2: avg_score_delta=25.3750 win_rate=3.4000 deal_in_rate=2.7500 avg_first_tenpai_turn=14.45 final_tenpai_rate=0.5000 avg_latency_ms_per_decision=0.06 latency_ms_p95=0.09 model_loaded_seats=40 neural_action_count=12505
+  sft_cold-opponent-3: avg_score_delta=31.5250 win_rate=3.5750 deal_in_rate=2.4500 avg_first_tenpai_turn=16.73 final_tenpai_rate=0.6500 avg_latency_ms_per_decision=0.06 latency_ms_p95=0.09 model_loaded_seats=40 neural_action_count=12428
+Subjects:
+  awr_candidate_neural: matches=20 completed=20 avg_final_score=-37.3000 avg_deal_in_count=2.4000 avg_win_count=3.0500
+  baseline_neural: matches=20 completed=20 avg_final_score=-65.7000 avg_deal_in_count=2.8000 avg_win_count=2.5500
+  RUN: cargo run --release --manifest-path backend/Cargo.toml --bin bot_arena -- --config output\awr_training\iter_0\matrix_config\matrix_config_1.json --output output\awr_training\iter_0\matrix_result_matrix_config_1.jsonl
+    Finished `release` profile [optimized] target(s) in 0.13s
+     Running `backend\target\release\bot_arena.exe --config output\awr_training\iter_0\matrix_config\matrix_config_1.json --output output\awr_training\iter_0\matrix_result_matrix_config_1.jsonl`
+[timing] match=0 actions=1371  inference=929.4ms (85%)  game=160.8ms (15%)  trajectory=0.1ms (0%)
+[timing_detail] encode=0.008ms inference=0.668ms sample=0.002ms  (per-action, n=1061)
+[timing] match=10 actions=1311  inference=894.5ms (86%)  game=151.2ms (14%)  trajectory=0.1ms (0%)
+[timing_detail] encode=0.008ms inference=0.678ms sample=0.002ms  (per-action, n=1018)
+[timing] match=0 actions=392  inference=291.2ms (85%)  game=52.1ms (15%)  trajectory=0.0ms (0%)
+[timing_detail] encode=0.007ms inference=0.730ms sample=0.002ms  (per-action, n=316)
+[timing] match=10 actions=1367  inference=1013.8ms (85%)  game=181.2ms (15%)  trajectory=0.1ms (0%)
+[timing_detail] encode=0.008ms inference=0.730ms sample=0.002ms  (per-action, n=1059)
+  RUN: C:\Python314\python.exe backend/bot_trainer/v2/arena_summary.py --input output\awr_training\iter_0\matrix_result_matrix_config_1.jsonl --output output\awr_training\iter_0\matrix_summary_matrix_config_1.json
+Arena summary: matches=40 completed=40
+  awr_candidate_neural: avg_score_delta=2.3500 win_rate=3.6500 deal_in_rate=1.8000 avg_first_tenpai_turn=12.65 final_tenpai_rate=0.7000 avg_latency_ms_per_decision=0.13 latency_ms_p95=0.16 model_loaded_seats=20 neural_action_count=6355
+  baseline_neural: avg_score_delta=7.3500 win_rate=3.5000 deal_in_rate=1.9500 avg_first_tenpai_turn=12.50 final_tenpai_rate=0.6000 avg_latency_ms_per_decision=0.05 latency_ms_p95=0.08 model_loaded_seats=20 neural_action_count=6665
+  sft_warm-opponent-1: avg_score_delta=7.8250 win_rate=3.1500 deal_in_rate=2.3750 avg_first_tenpai_turn=17.82 final_tenpai_rate=0.4250 avg_latency_ms_per_decision=0.06 latency_ms_p95=0.09 model_loaded_seats=40 neural_action_count=12850
+  sft_warm-opponent-2: avg_score_delta=-0.3500 win_rate=2.8250 deal_in_rate=2.6000 avg_first_tenpai_turn=19.50 final_tenpai_rate=0.4250 avg_latency_ms_per_decision=0.06 latency_ms_p95=0.09 model_loaded_seats=40 neural_action_count=12804
+  sft_warm-opponent-3: avg_score_delta=-12.3250 win_rate=2.7000 deal_in_rate=2.7000 avg_first_tenpai_turn=19.68 final_tenpai_rate=0.3500 avg_latency_ms_per_decision=0.06 latency_ms_p95=0.08 model_loaded_seats=40 neural_action_count=12813
+Subjects:
+  awr_candidate_neural: matches=20 completed=20 avg_final_score=2.3500 avg_deal_in_count=1.8000 avg_win_count=3.6500
+  baseline_neural: matches=20 completed=20 avg_final_score=7.3500 avg_deal_in_count=1.9500 avg_win_count=3.5000
+  RUN: cargo run --release --manifest-path backend/Cargo.toml --bin bot_arena -- --config output\awr_training\iter_0\matrix_config\matrix_config_2.json --output output\awr_training\iter_0\matrix_result_matrix_config_2.jsonl
+    Finished `release` profile [optimized] target(s) in 0.14s
+     Running `backend\target\release\bot_arena.exe --config output\awr_training\iter_0\matrix_config\matrix_config_2.json --output output\awr_training\iter_0\matrix_result_matrix_config_2.jsonl`
+[timing] match=0 actions=1399  inference=985.8ms (85%)  game=168.1ms (15%)  trajectory=0.1ms (0%)
+[timing_detail] encode=0.008ms inference=0.696ms sample=0.002ms  (per-action, n=1091)
+[timing] match=10 actions=1425  inference=1002.5ms (86%)  game=168.7ms (14%)  trajectory=0.2ms (0%)
+[timing_detail] encode=0.008ms inference=0.693ms sample=0.002ms  (per-action, n=1106)
+[timing] match=0 actions=1343  inference=1007.7ms (86%)  game=157.3ms (14%)  trajectory=0.1ms (0%)
+[timing_detail] encode=0.008ms inference=0.743ms sample=0.002ms  (per-action, n=1043)
+[timing] match=10 actions=1527  inference=1159.6ms (85%)  game=205.5ms (15%)  trajectory=0.1ms (0%)
+[timing_detail] encode=0.008ms inference=0.750ms sample=0.002ms  (per-action, n=1185)
+  RUN: C:\Python314\python.exe backend/bot_trainer/v2/arena_summary.py --input output\awr_training\iter_0\matrix_result_matrix_config_2.jsonl --output output\awr_training\iter_0\matrix_summary_matrix_config_2.json
+Arena summary: matches=40 completed=40
+  awr_candidate_neural: avg_score_delta=50.9000 win_rate=3.7500 deal_in_rate=1.7000 avg_first_tenpai_turn=11.55 final_tenpai_rate=0.6000 avg_latency_ms_per_decision=0.14 latency_ms_p95=0.18 model_loaded_seats=20 neural_action_count=7319
+  baseline_neural: avg_score_delta=95.7000 win_rate=4.4500 deal_in_rate=1.0500 avg_first_tenpai_turn=12.40 final_tenpai_rate=0.7500 avg_latency_ms_per_decision=0.06 latency_ms_p95=0.08 model_loaded_seats=20 neural_action_count=7143
+  sft_hot-opponent-1: avg_score_delta=-17.0750 win_rate=2.1000 deal_in_rate=2.7750 avg_first_tenpai_turn=22.40 final_tenpai_rate=0.3500 avg_latency_ms_per_decision=0.07 latency_ms_p95=0.10 model_loaded_seats=40 neural_action_count=14144
+  sft_hot-opponent-2: avg_score_delta=-28.5500 win_rate=1.8250 deal_in_rate=2.2750 avg_first_tenpai_turn=19.05 final_tenpai_rate=0.4000 avg_latency_ms_per_decision=0.06 latency_ms_p95=0.09 model_loaded_seats=40 neural_action_count=14100
+  sft_hot-opponent-3: avg_score_delta=-27.6750 win_rate=1.9250 deal_in_rate=2.2500 avg_first_tenpai_turn=19.98 final_tenpai_rate=0.3000 avg_latency_ms_per_decision=0.06 latency_ms_p95=0.09 model_loaded_seats=40 neural_action_count=14114
+Subjects:
+  awr_candidate_neural: matches=20 completed=20 avg_final_score=50.9000 avg_deal_in_count=1.7000 avg_win_count=3.7500
+  baseline_neural: matches=20 completed=20 avg_final_score=95.7000 avg_deal_in_count=1.0500 avg_win_count=4.4500
+  RUN: C:\Python314\python.exe backend/bot_trainer/v2/candidate_gate.py --summary output\awr_training\iter_0\matrix_summary_matrix_config_0.json output\awr_training\iter_0\matrix_summary_matrix_config_1.json output\awr_training\iter_0\matrix_summary_matrix_config_2.json --pool output\awr_training\working_pool.json --output output\awr_training\iter_0\gate_result.json
+{
+  "accepted": false,
+  "weighted_metrics": {
+    "avg_score_delta": -7.133333333333333,
+    "win_rate": -0.016666666666666757,
+    "deal_in_rate": -0.023333333333333428
+  },
+  "per_opponent": [
+    {
+      "opponent_id": "sft_cold",
+      "weight": 1.0,
+      "result": {
+        "accepted": false,
+        "failures": [
+          "paired_confidence"
+        ],
+        "failure_details": [
+          {
+            "metric": "paired_confidence",
+            "baseline": null,
+            "candidate": {
+              "baseline_policy": "baseline_neural",
+              "candidate_policy": "awr_candidate_neural",
+              "deltas": [
+                230.0,
+                -6.0,
+                124.0,
+                -201.0,
+                168.0,
+                66.0,
+                133.0,
+                -145.0,
+                60.0,
+                -144.0,
+                50.0,
+                -47.0,
+                -16.0,
+                94.0,
+                59.0,
+                -101.0,
+                261.0,
+                -92.0,
+                110.0,
+                -35.0
+              ],
+              "paired_match_count": 20,
+              "avg_score_delta": 28.4,
+              "stddev_score_delta": 126.82453689209646,
+              "stderr_score_delta": 28.35882857056576,
+              "confidence95_low": -27.183303998308887,
+              "confidence95_high": 83.98330399830888,
+              "positive_delta_rate": 0.55,
+              "min_score_delta": -201.0,
+              "max_score_delta": 261.0
+            },
+            "threshold": "confidence95_low_gt_0",
+            "margin": -27.183303998308887
+          }
+        ],
+        "baseline": {
+          "seat_count": 20,
+          "avg_score_delta": -65.7,
+          "win_rate": 2.55,
+          "deal_in_rate": 2.8,
+          "avg_first_tenpai_turn": 12.5,
+          "final_tenpai_rate": 0.55,
+          "avg_claims": 26.7,
+          "avg_discards": 248.0,
+          "avg_decisions": 328.5,
+          "avg_latency_ms_per_decision": 0.06301369863013699,
+          "model_loaded_seats": 20,
+          "neural_action_count": 6277,
+          "latency_sample_count": 20,
+          "latency_ms_p50": 0.06211663791451025,
+          "latency_ms_p95": 0.07824583541195919,
+          "latency_ms_max": 0.08143322475570032
+        },
+        "candidate": {
+          "seat_count": 20,
+          "avg_score_delta": -37.3,
+          "win_rate": 3.05,
+          "deal_in_rate": 2.4,
+          "avg_first_tenpai_turn": 11.9,
+          "final_tenpai_rate": 0.55,
+          "avg_claims": 28.0,
+          "avg_discards": 248.05,
+          "avg_decisions": 325.1,
+          "avg_latency_ms_per_decision": 0.13580436788680406,
+          "model_loaded_seats": 20,
+          "neural_action_count": 6210,
+          "latency_sample_count": 20,
+          "latency_ms_p50": 0.1356260675338326,
+          "latency_ms_p95": 0.1613253360312184,
+          "latency_ms_max": 0.1783783783783784
+        },
+        "paired": {
+          "baseline_policy": "baseline_neural",
+          "candidate_policy": "awr_candidate_neural",
+          "deltas": [
+            230.0,
+            -6.0,
+            124.0,
+            -201.0,
+            168.0,
+            66.0,
+            133.0,
+            -145.0,
+            60.0,
+            -144.0,
+            50.0,
+            -47.0,
+            -16.0,
+            94.0,
+            59.0,
+            -101.0,
+            261.0,
+            -92.0,
+            110.0,
+            -35.0
+          ],
+          "paired_match_count": 20,
+          "avg_score_delta": 28.4,
+          "stddev_score_delta": 126.82453689209646,
+          "stderr_score_delta": 28.35882857056576,
+          "confidence95_low": -27.183303998308887,
+          "confidence95_high": 83.98330399830888,
+          "positive_delta_rate": 0.55,
+          "min_score_delta": -201.0,
+          "max_score_delta": 261.0
+        },
+        "promotion_report": {
+          "metrics": {
+            "avg_score_delta": {
+              "baseline": -65.7,
+              "candidate": -37.3,
+              "threshold": -65.7,
+              "margin": 28.400000000000006,
+              "passed": true
+            },
+            "win_rate": {
+              "baseline": 2.55,
+              "candidate": 3.05,
+              "threshold": 2.55,
+              "margin": 0.5,
+              "passed": true
+            },
+            "deal_in_rate": {
+              "baseline": 2.8,
+              "candidate": 2.4,
+              "threshold": 2.8099999999999996,
+              "margin": 0.4099999999999997,
+              "passed": true
+            },
+            "tenpai": {
+              "baseline": {
+                "avg_first_tenpai_turn": 12.5,
+                "final_tenpai_rate": 0.55
+              },
+              "candidate": {
+                "avg_first_tenpai_turn": 11.9,
+                "final_tenpai_rate": 0.55
+              },
+              "threshold": "first_tenpai_not_later_or_final_tenpai_not_lower",
+              "margin": 0.5999999999999996,
+              "first_tenpai_margin": 0.5999999999999996,
+              "final_tenpai_margin": 0.0,
+              "passed": true
+            }
+          },
+          "claim_rate": {
+            "baseline": 26.7,
+            "candidate": 28.0,
+            "threshold": 53.4,
+            "margin": 25.4,
+            "passed": true
+          },
+          "latency": {
+            "baseline": 0.06301369863013699,
+            "candidate": 0.13580436788680406,
+            "candidate_avg_ms_per_decision": 0.13580436788680406,
+            "candidate_p95_ms": 0.1613253360312184,
+            "candidate_max_ms": 0.1783783783783784,
+            "threshold": 200.0,
+            "limit_ms": 200.0,
+            "margin": 199.8641956321132,
+            "passed": true
+          },
+          "paired": {
+            "baseline_policy": "baseline_neural",
+            "candidate_policy": "awr_candidate_neural",
+            "deltas": [
+              230.0,
+              -6.0,
+              124.0,
+              -201.0,
+              168.0,
+              66.0,
+              133.0,
+              -145.0,
+              60.0,
+              -144.0,
+              50.0,
+              -47.0,
+              -16.0,
+              94.0,
+              59.0,
+              -101.0,
+              261.0,
+              -92.0,
+              110.0,
+              -35.0
+            ],
+            "paired_match_count": 20,
+            "avg_score_delta": 28.4,
+            "stddev_score_delta": 126.82453689209646,
+            "stderr_score_delta": 28.35882857056576,
+            "confidence95_low": -27.183303998308887,
+            "confidence95_high": 83.98330399830888,
+            "positive_delta_rate": 0.55,
+            "min_score_delta": -201.0,
+            "max_score_delta": 261.0
+          },
+          "warnings": [
+            "paired_confidence_interval_crosses_zero"
+          ]
+        }
+      }
+    },
+    {
+      "opponent_id": "sft_warm",
+      "weight": 1.0,
+      "result": {
+        "accepted": false,
+        "failures": [
+          "avg_score_delta",
+          "paired_confidence"
+        ],
+        "failure_details": [
+          {
+            "metric": "avg_score_delta",
+            "baseline": 7.35,
+            "candidate": 2.35,
+            "threshold": 7.35,
+            "margin": -5.0
+          },
+          {
+            "metric": "paired_confidence",
+            "baseline": null,
+            "candidate": {
+              "baseline_policy": "baseline_neural",
+              "candidate_policy": "awr_candidate_neural",
+              "deltas": [
+                123.0,
+                110.0,
+                -121.0,
+                -85.0,
+                38.0,
+                -204.0,
+                179.0,
+                110.0,
+                -11.0,
+                234.0,
+                -294.0,
+                60.0,
+                -88.0,
+                -59.0,
+                34.0,
+                -159.0,
+                84.0,
+                -189.0,
+                38.0,
+                100.0
+              ],
+              "paired_match_count": 20,
+              "avg_score_delta": -5.0,
+              "stddev_score_delta": 140.03608557496133,
+              "stderr_score_delta": 31.313020664859124,
+              "confidence95_low": -66.37352050312388,
+              "confidence95_high": 56.373520503123885,
+              "positive_delta_rate": 0.55,
+              "min_score_delta": -294.0,
+              "max_score_delta": 234.0
+            },
+            "threshold": "confidence95_low_gt_0",
+            "margin": -66.37352050312388
+          }
+        ],
+        "baseline": {
+          "seat_count": 20,
+          "avg_score_delta": 7.35,
+          "win_rate": 3.5,
+          "deal_in_rate": 1.95,
+          "avg_first_tenpai_turn": 12.5,
+          "final_tenpai_rate": 0.6,
+          "avg_claims": 28.1,
+          "avg_discards": 264.4,
+          "avg_decisions": 346.85,
+          "avg_latency_ms_per_decision": 0.05477872279083177,
+          "model_loaded_seats": 20,
+          "neural_action_count": 6665,
+          "latency_sample_count": 20,
+          "latency_ms_p50": 0.05505708430913349,
+          "latency_ms_p95": 0.07582203330288766,
+          "latency_ms_max": 0.08139534883720931
+        },
+        "candidate": {
+          "seat_count": 20,
+          "avg_score_delta": 2.35,
+          "win_rate": 3.65,
+          "deal_in_rate": 1.8,
+          "avg_first_tenpai_turn": 12.65,
+          "final_tenpai_rate": 0.7,
+          "avg_claims": 27.2,
+          "avg_discards": 251.75,
+          "avg_decisions": 329.6,
+          "avg_latency_ms_per_decision": 0.13212985436893204,
+          "model_loaded_seats": 20,
+          "neural_action_count": 6355,
+          "latency_sample_count": 20,
+          "latency_ms_p50": 0.1335861650485437,
+          "latency_ms_p95": 0.16085093167701864,
+          "latency_ms_max": 0.17701863354037267
+        },
+        "paired": {
+          "baseline_policy": "baseline_neural",
+          "candidate_policy": "awr_candidate_neural",
+          "deltas": [
+            123.0,
+            110.0,
+            -121.0,
+            -85.0,
+            38.0,
+            -204.0,
+            179.0,
+            110.0,
+            -11.0,
+            234.0,
+            -294.0,
+            60.0,
+            -88.0,
+            -59.0,
+            34.0,
+            -159.0,
+            84.0,
+            -189.0,
+            38.0,
+            100.0
+          ],
+          "paired_match_count": 20,
+          "avg_score_delta": -5.0,
+          "stddev_score_delta": 140.03608557496133,
+          "stderr_score_delta": 31.313020664859124,
+          "confidence95_low": -66.37352050312388,
+          "confidence95_high": 56.373520503123885,
+          "positive_delta_rate": 0.55,
+          "min_score_delta": -294.0,
+          "max_score_delta": 234.0
+        },
+        "promotion_report": {
+          "metrics": {
+            "avg_score_delta": {
+              "baseline": 7.35,
+              "candidate": 2.35,
+              "threshold": 7.35,
+              "margin": -5.0,
+              "passed": false
+            },
+            "win_rate": {
+              "baseline": 3.5,
+              "candidate": 3.65,
+              "threshold": 3.5,
+              "margin": 0.1499999999999999,
+              "passed": true
+            },
+            "deal_in_rate": {
+              "baseline": 1.95,
+              "candidate": 1.8,
+              "threshold": 1.96,
+              "margin": 0.15999999999999992,
+              "passed": true
+            },
+            "tenpai": {
+              "baseline": {
+                "avg_first_tenpai_turn": 12.5,
+                "final_tenpai_rate": 0.6
+              },
+              "candidate": {
+                "avg_first_tenpai_turn": 12.65,
+                "final_tenpai_rate": 0.7
+              },
+              "threshold": "first_tenpai_not_later_or_final_tenpai_not_lower",
+              "margin": 0.09999999999999998,
+              "first_tenpai_margin": -0.15000000000000036,
+              "final_tenpai_margin": 0.09999999999999998,
+              "passed": true
+            }
+          },
+          "claim_rate": {
+            "baseline": 28.1,
+            "candidate": 27.2,
+            "threshold": 56.2,
+            "margin": 29.000000000000004,
+            "passed": true
+          },
+          "latency": {
+            "baseline": 0.05477872279083177,
+            "candidate": 0.13212985436893204,
+            "candidate_avg_ms_per_decision": 0.13212985436893204,
+            "candidate_p95_ms": 0.16085093167701864,
+            "candidate_max_ms": 0.17701863354037267,
+            "threshold": 200.0,
+            "limit_ms": 200.0,
+            "margin": 199.86787014563106,
+            "passed": true
+          },
+          "paired": {
+            "baseline_policy": "baseline_neural",
+            "candidate_policy": "awr_candidate_neural",
+            "deltas": [
+              123.0,
+              110.0,
+              -121.0,
+              -85.0,
+              38.0,
+              -204.0,
+              179.0,
+              110.0,
+              -11.0,
+              234.0,
+              -294.0,
+              60.0,
+              -88.0,
+              -59.0,
+              34.0,
+              -159.0,
+              84.0,
+              -189.0,
+              38.0,
+              100.0
+            ],
+            "paired_match_count": 20,
+            "avg_score_delta": -5.0,
+            "stddev_score_delta": 140.03608557496133,
+            "stderr_score_delta": 31.313020664859124,
+            "confidence95_low": -66.37352050312388,
+            "confidence95_high": 56.373520503123885,
+            "positive_delta_rate": 0.55,
+            "min_score_delta": -294.0,
+            "max_score_delta": 234.0
+          },
+          "warnings": [
+            "paired_confidence_interval_crosses_zero"
+          ]
+        }
+      }
+    },
+    {
+      "opponent_id": "sft_hot",
+      "weight": 1.0,
+      "result": {
+        "accepted": false,
+        "failures": [
+          "avg_score_delta",
+          "win_rate",
+          "deal_in_rate",
+          "paired_confidence"
+        ],
+        "failure_details": [
+          {
+            "metric": "avg_score_delta",
+            "baseline": 95.7,
+            "candidate": 50.9,
+            "threshold": 95.7,
+            "margin": -44.800000000000004
+          },
+          {
+            "metric": "win_rate",
+            "baseline": 4.45,
+            "candidate": 3.75,
+            "threshold": 4.45,
+            "margin": -0.7000000000000002
+          },
+          {
+            "metric": "deal_in_rate",
+            "baseline": 1.05,
+            "candidate": 1.7,
+            "threshold": 1.06,
+            "margin": -0.6399999999999999
+          },
+          {
+            "metric": "paired_confidence",
+            "baseline": null,
+            "candidate": {
+              "baseline_policy": "baseline_neural",
+              "candidate_policy": "awr_candidate_neural",
+              "deltas": [
+                -36.0,
+                -125.0,
+                128.0,
+                -85.0,
+                85.0,
+                -102.0,
+                -227.0,
+                143.0,
+                -270.0,
+                -57.0,
+                23.0,
+                -18.0,
+                -13.0,
+                31.0,
+                -119.0,
+                55.0,
+                118.0,
+                -134.0,
+                -116.0,
+                -177.0
+              ],
+              "paired_match_count": 20,
+              "avg_score_delta": -44.8,
+              "stddev_score_delta": 117.42392834243121,
+              "stderr_score_delta": 26.25678859587404,
+              "confidence95_low": -96.26330564791311,
+              "confidence95_high": 6.66330564791312,
+              "positive_delta_rate": 0.35,
+              "min_score_delta": -270.0,
+              "max_score_delta": 143.0
+            },
+            "threshold": "confidence95_low_gt_0",
+            "margin": -96.26330564791311
+          }
+        ],
+        "baseline": {
+          "seat_count": 20,
+          "avg_score_delta": 95.7,
+          "win_rate": 4.45,
+          "deal_in_rate": 1.05,
+          "avg_first_tenpai_turn": 12.4,
+          "final_tenpai_rate": 0.75,
+          "avg_claims": 30.95,
+          "avg_discards": 283.0,
+          "avg_decisions": 372.05,
+          "avg_latency_ms_per_decision": 0.0585942749630426,
+          "model_loaded_seats": 20,
+          "neural_action_count": 7143,
+          "latency_sample_count": 20,
+          "latency_ms_p50": 0.058186401676706384,
+          "latency_ms_p95": 0.07749832973584131,
+          "latency_ms_max": 0.08454106280193237
+        },
+        "candidate": {
+          "seat_count": 20,
+          "avg_score_delta": 50.9,
+          "win_rate": 3.75,
+          "deal_in_rate": 1.7,
+          "avg_first_tenpai_turn": 11.55,
+          "final_tenpai_rate": 0.6,
+          "avg_claims": 32.1,
+          "avg_discards": 290.85,
+          "avg_decisions": 381.2,
+          "avg_latency_ms_per_decision": 0.13982161594963274,
+          "model_loaded_seats": 20,
+          "neural_action_count": 7319,
+          "latency_sample_count": 20,
+          "latency_ms_p50": 0.13268156424581007,
+          "latency_ms_p95": 0.1755162491536899,
+          "latency_ms_max": 0.17857142857142858
+        },
+        "paired": {
+          "baseline_policy": "baseline_neural",
+          "candidate_policy": "awr_candidate_neural",
+          "deltas": [
+            -36.0,
+            -125.0,
+            128.0,
+            -85.0,
+            85.0,
+            -102.0,
+            -227.0,
+            143.0,
+            -270.0,
+            -57.0,
+            23.0,
+            -18.0,
+            -13.0,
+            31.0,
+            -119.0,
+            55.0,
+            118.0,
+            -134.0,
+            -116.0,
+            -177.0
+          ],
+          "paired_match_count": 20,
+          "avg_score_delta": -44.8,
+          "stddev_score_delta": 117.42392834243121,
+          "stderr_score_delta": 26.25678859587404,
+          "confidence95_low": -96.26330564791311,
+          "confidence95_high": 6.66330564791312,
+          "positive_delta_rate": 0.35,
+          "min_score_delta": -270.0,
+          "max_score_delta": 143.0
+        },
+        "promotion_report": {
+          "metrics": {
+            "avg_score_delta": {
+              "baseline": 95.7,
+              "candidate": 50.9,
+              "threshold": 95.7,
+              "margin": -44.800000000000004,
+              "passed": false
+            },
+            "win_rate": {
+              "baseline": 4.45,
+              "candidate": 3.75,
+              "threshold": 4.45,
+              "margin": -0.7000000000000002,
+              "passed": false
+            },
+            "deal_in_rate": {
+              "baseline": 1.05,
+              "candidate": 1.7,
+              "threshold": 1.06,
+              "margin": -0.6399999999999999,
+              "passed": false
+            },
+            "tenpai": {
+              "baseline": {
+                "avg_first_tenpai_turn": 12.4,
+                "final_tenpai_rate": 0.75
+              },
+              "candidate": {
+                "avg_first_tenpai_turn": 11.55,
+                "final_tenpai_rate": 0.6
+              },
+              "threshold": "first_tenpai_not_later_or_final_tenpai_not_lower",
+              "margin": 0.8499999999999996,
+              "first_tenpai_margin": 0.8499999999999996,
+              "final_tenpai_margin": -0.15000000000000002,
+              "passed": true
+            }
+          },
+          "claim_rate": {
+            "baseline": 30.95,
+            "candidate": 32.1,
+            "threshold": 61.9,
+            "margin": 29.799999999999997,
+            "passed": true
+          },
+          "latency": {
+            "baseline": 0.0585942749630426,
+            "candidate": 0.13982161594963274,
+            "candidate_avg_ms_per_decision": 0.13982161594963274,
+            "candidate_p95_ms": 0.1755162491536899,
+            "candidate_max_ms": 0.17857142857142858,
+            "threshold": 200.0,
+            "limit_ms": 200.0,
+            "margin": 199.86017838405036,
+            "passed": true
+          },
+          "paired": {
+            "baseline_policy": "baseline_neural",
+            "candidate_policy": "awr_candidate_neural",
+            "deltas": [
+              -36.0,
+              -125.0,
+              128.0,
+              -85.0,
+              85.0,
+              -102.0,
+              -227.0,
+              143.0,
+              -270.0,
+              -57.0,
+              23.0,
+              -18.0,
+              -13.0,
+              31.0,
+              -119.0,
+              55.0,
+              118.0,
+              -134.0,
+              -116.0,
+              -177.0
+            ],
+            "paired_match_count": 20,
+            "avg_score_delta": -44.8,
+            "stddev_score_delta": 117.42392834243121,
+            "stderr_score_delta": 26.25678859587404,
+            "confidence95_low": -96.26330564791311,
+            "confidence95_high": 6.66330564791312,
+            "positive_delta_rate": 0.35,
+            "min_score_delta": -270.0,
+            "max_score_delta": 143.0
+          },
+          "warnings": [
+            "paired_confidence_interval_crosses_zero"
+          ]
+        }
+      }
+    }
+  ],
+  "all_failures": [
+    "avg_score_delta",
+    "deal_in_rate",
+    "paired_confidence",
+    "win_rate"
+  ]
+}
+>>> ITERATION 0 : CANDIDATE REJECTED <<<

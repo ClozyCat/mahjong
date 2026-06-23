@@ -140,6 +140,12 @@ def test_awr_wrapper_uses_v2_sft_checkpoint_and_rollout_override() -> None:
     assert "trajectory_config_" in script
     assert "arena_summary.py" in script
     assert "matrix_summaries" in script
-    assert "--temperature" in script and "0.5" in script
+    assert "--temperature" in script and "args.awr_temperature" in script
+    assert "--weight-clip" in script and "args.awr_weight_clip" in script
+    assert "--awr-epochs" in script
     assert "--sft-checkpoint" in script
+    assert '"--sft-checkpoint", args.sft_checkpoint' in script
+    assert '"--risk-value-checkpoint", args.sft_checkpoint' in script
+    assert "--risk-value-checkpoint" in script
+    assert "--matrix-matches" in script and "default=80" in script
     assert "--policy-id" in script and "learner" in script

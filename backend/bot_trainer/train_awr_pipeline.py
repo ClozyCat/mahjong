@@ -17,9 +17,12 @@ from pathlib import Path
 def parse_args() -> argparse.Namespace:
     p = argparse.ArgumentParser(description="AWR Training Pipeline")
     p.add_argument("--iterations", type=int, default=3)
-    p.add_argument("--trajectory-matches", type=int, default=200)
+    p.add_argument("--trajectory-matches", type=int, default=400)
     p.add_argument("--trajectory-chunk-matches", type=int, default=50)
-    p.add_argument("--matrix-matches", type=int, default=20)
+    p.add_argument("--matrix-matches", type=int, default=80)
+    p.add_argument("--awr-epochs", type=int, default=3)
+    p.add_argument("--awr-temperature", type=float, default=1.0)
+    p.add_argument("--awr-weight-clip", type=float, default=10.0)
     p.add_argument("--seed", default=datetime.now().strftime("%Y%m%d"))
     p.add_argument("--sft-onnx", default="backend/assets/sft/sft.onnx")
     p.add_argument("--sft-checkpoint", default="backend/bot_trainer/v2/checkpoints/best.pt")
@@ -229,13 +232,15 @@ def main() -> None:
             "--trajectories", str(traj_out),
             "--checkpoint", str(value_ckpt),
             "--output-dir", str(awr_dir),
-            "--epochs", "5",
+            "--epochs", str(args.awr_epochs),
             "--value-finetune-epochs", "3",
             "--batch-size", "512",
             "--lr", "3e-5",
-            "--temperature", "0.5",
+            "--temperature", str(args.awr_temperature),
+            "--weight-clip", str(args.awr_weight_clip),
             "--adv-source", "value",
-            "--sft-checkpoint", str(base_ckpt),
+            "--sft-checkpoint", args.sft_checkpoint,
+            "--risk-value-checkpoint", args.sft_checkpoint,
             "--policy-id", "learner",
         ])
 

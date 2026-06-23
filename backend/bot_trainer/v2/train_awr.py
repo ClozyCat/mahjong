@@ -59,6 +59,8 @@ def parse_args() -> argparse.Namespace:
                         help="After AWR epochs, freeze policy and train value head only for N epochs")
     parser.add_argument("--sft-checkpoint", type=Path, default=None,
                         help="SFT checkpoint for KL reference; defaults to --checkpoint")
+    parser.add_argument("--risk-value-checkpoint", type=Path, default=None,
+                        help="Checkpoint whose value_head is restored before saving export checkpoints")
     parser.add_argument("--policy-id", default=None)
     parser.add_argument("--device", default="cuda")
     parser.add_argument("--seed", type=int, default=42)
@@ -202,6 +204,49 @@ class AwrDiagnostics:
         }
 
 
+def restore_export_value_head(
+    *,
+    checkpoint_state: dict[str, torch.Tensor],
+    risk_checkpoint_state: dict[str, torch.Tensor] | None,
+) -> dict[str, torch.Tensor]:
+    export_state = {key: value.clone() for key, value in checkpoint_state.items()}
+    if risk_checkpoint_state is None:
+        return export_state
+    for key, value in risk_checkpoint_state.items():
+        if key.startswith("value_head."):
+            if key not in export_state:
+                raise KeyError(f"Risk value checkpoint has unexpected key: {key}")
+            if export_state[key].shape != value.shape:
+                raise ValueError(
+                    f"Risk value checkpoint shape mismatch for {key}: "
+                    f"{tuple(value.shape)} != {tuple(export_state[key].shape)}"
+                )
+            export_state[key] = value.clone()
+    return export_state
+
+
+def checkpoint_payload(
+    *,
+    model: torch.nn.Module,
+    model_config: ModelConfig,
+    risk_value_state: dict[str, torch.Tensor] | None,
+    epoch: int,
+    metrics: dict[str, float | int | None],
+) -> dict:
+    return {
+        "model_state": restore_export_value_head(
+            checkpoint_state=model.state_dict(),
+            risk_checkpoint_state=risk_value_state,
+        ),
+        "model_config": model_config.to_dict(),
+        "training_source": "awr",
+        "created_at_utc": datetime.now(UTC).isoformat(),
+        "awr_epoch": epoch,
+        "awr_metrics": metrics,
+        "export_value_head_source": "risk_value_checkpoint" if risk_value_state is not None else "awr",
+    }
+
+
 def main() -> None:
     args = parse_args()
     torch.manual_seed(args.seed)
@@ -244,6 +289,13 @@ def main() -> None:
         {"params": policy_params, "lr": args.lr},
         {"params": value_head_params, "lr": args.lr * args.value_lr_multiplier},
     ])
+
+    risk_value_state = None
+    risk_value_path = args.risk_value_checkpoint or args.sft_checkpoint
+    if risk_value_path is not None:
+        risk_checkpoint = torch.load(risk_value_path, map_location="cpu")
+        risk_value_state = risk_checkpoint["model_state"]
+        print(f"Export value_for_risk head source: {risk_value_path}")
 
     sft_model = None
     if args.kl_coef > 0:
@@ -401,23 +453,23 @@ def main() -> None:
             f"samples={total_samples}"
         )
 
+        metrics = {
+            "policy_loss": avg_policy,
+            "value_mse": avg_value,
+            "value_explained_variance": explained_var,
+            "val_value_mse": val_mse,
+            "val_value_explained_variance": val_ev,
+            "kl_loss": avg_kl,
+            **diag_metrics,
+        }
         torch.save(
-            {
-                "model_state": model.state_dict(),
-                "model_config": model_config.to_dict(),
-                "training_source": "awr",
-                "created_at_utc": datetime.now(UTC).isoformat(),
-                "awr_epoch": epoch + 1,
-                "awr_metrics": {
-                    "policy_loss": avg_policy,
-                    "value_mse": avg_value,
-                    "value_explained_variance": explained_var,
-                    "val_value_mse": val_mse,
-                    "val_value_explained_variance": val_ev,
-                    "kl_loss": avg_kl,
-                    **diag_metrics,
-                },
-            },
+            checkpoint_payload(
+                model=model,
+                model_config=model_config,
+                risk_value_state=risk_value_state,
+                epoch=epoch + 1,
+                metrics=metrics,
+            ),
             args.output_dir / f"awr_epoch_{epoch+1:03d}.pt",
         )
 
@@ -425,22 +477,13 @@ def main() -> None:
         if selection_ev > best_value_ev:
             best_value_ev = selection_ev
             torch.save(
-                {
-                    "model_state": {k: v.clone() for k, v in model.state_dict().items()},
-                    "model_config": model_config.to_dict(),
-                    "training_source": "awr",
-                    "created_at_utc": datetime.now(UTC).isoformat(),
-                    "awr_epoch": epoch + 1,
-                    "awr_metrics": {
-                        "policy_loss": avg_policy,
-                        "value_mse": avg_value,
-                        "value_explained_variance": explained_var,
-                        "val_value_mse": val_mse,
-                        "val_value_explained_variance": val_ev,
-                        "kl_loss": avg_kl,
-                        **diag_metrics,
-                    },
-                },
+                checkpoint_payload(
+                    model=model,
+                    model_config=model_config,
+                    risk_value_state=risk_value_state,
+                    epoch=epoch + 1,
+                    metrics=metrics,
+                ),
                 args.output_dir / "awr_best.pt",
             )
 
@@ -481,13 +524,12 @@ def main() -> None:
 
     if value_finetuned or best_value_ev < 0:
         torch.save(
-            {
-                "model_state": model.state_dict(),
-                "model_config": model_config.to_dict(),
-                "training_source": "awr",
-                "created_at_utc": datetime.now(UTC).isoformat(),
-                "awr_epoch": args.epochs,
-                "awr_metrics": {
+            checkpoint_payload(
+                model=model,
+                model_config=model_config,
+                risk_value_state=risk_value_state,
+                epoch=args.epochs,
+                metrics={
                     "policy_loss": avg_policy,
                     "value_mse": avg_value,
                     "value_explained_variance": explained_var,
@@ -497,7 +539,7 @@ def main() -> None:
                     "value_finetune_epochs": args.value_finetune_epochs,
                     **diag_metrics,
                 },
-            },
+            ),
             args.output_dir / "awr_best.pt",
         )
         best_value_ev = max(best_value_ev, explained_var)
