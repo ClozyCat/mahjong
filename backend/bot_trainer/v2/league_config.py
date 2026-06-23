@@ -18,6 +18,8 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--matches", type=int, required=True)
     parser.add_argument("--seed", type=int, required=True)
     parser.add_argument("--max-actions", type=int, default=2400)
+    parser.add_argument("--trajectory-chunk-matches", type=int, default=0,
+                        help="Trajectory matches per generated config; 0 = one config")
     parser.add_argument("--mode", choices=["trajectory", "eval", "matrix"], default="trajectory")
     parser.add_argument("--rollout-onnx", type=Path, default=None)
     parser.add_argument("--candidate-onnx", type=Path, default=None)
@@ -97,6 +99,7 @@ def build_trajectory_configs(
     matches: int,
     seed: int,
     max_actions: int,
+    chunk_matches: int = 0,
 ) -> list[dict[str, Any]]:
     learner = clean_policy(pool["learner"])
     learner["sample_actions"] = True
@@ -104,20 +107,30 @@ def build_trajectory_configs(
     learner_subject = {**learner, "display_name": "Learner"}
 
     opponents_pool = pool.get("rollout_opponents") or pool.get("opponents") or []
-    match_rng = random.Random(seed + 1)
-    if opponents_pool:
-        chosen = weighted_sample(opponents_pool, 3, match_rng)
-        opponents = [clean_policy(o) for o in chosen]
-    else:
-        opponents = [clean_policy(learner) for _ in range(3)]
-    return [{
-        "matches": matches,
-        "seed": seed,
-        "max_actions_per_match": max_actions,
-        "report_trajectories": True,
-        "subjects": [learner_subject],
-        "opponents": opponents,
-    }]
+    chunk_size = matches if chunk_matches <= 0 else max(1, chunk_matches)
+    configs: list[dict[str, Any]] = []
+    remaining = matches
+    chunk_index = 0
+    while remaining > 0:
+        current_matches = min(chunk_size, remaining)
+        chunk_seed = seed + chunk_index * 1000
+        match_rng = random.Random(chunk_seed + 1)
+        if opponents_pool:
+            chosen = weighted_sample(opponents_pool, 3, match_rng)
+            opponents = [clean_policy(o) for o in chosen]
+        else:
+            opponents = [clean_policy(learner) for _ in range(3)]
+        configs.append({
+            "matches": current_matches,
+            "seed": chunk_seed,
+            "max_actions_per_match": max_actions,
+            "report_trajectories": True,
+            "subjects": [learner_subject],
+            "opponents": opponents,
+        })
+        remaining -= current_matches
+        chunk_index += 1
+    return configs
 
 
 def build_eval_config(
@@ -224,6 +237,7 @@ def main() -> None:
                 args.matches,
                 args.seed,
                 args.max_actions,
+                args.trajectory_chunk_matches,
             )
         ):
             write_json(args.output_dir / f"trajectory_config_{index}.json", config)

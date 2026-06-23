@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import argparse
+import math
 from datetime import UTC, datetime
 from pathlib import Path
 
@@ -9,7 +10,11 @@ import torch.nn.functional as F
 from torch.utils.data import DataLoader
 from tqdm import tqdm
 
-from awr_dataset import ArenaTrajectoryDataset, compute_normalized_advantages
+from awr_dataset import (
+    ArenaTrajectoryDataset,
+    compute_normalized_advantages,
+    split_rows_by_match_id,
+)
 from model import ModelConfig, build_model
 
 
@@ -46,6 +51,8 @@ def parse_args() -> argparse.Namespace:
                         help="MSE distillation loss for fan_value against SFT reference")
     parser.add_argument("--value-loss-coef", type=float, default=4.0,
                         help="Weight for value loss in total loss")
+    parser.add_argument("--val-fraction", type=float, default=0.1,
+                        help="Fraction of match IDs held out for value validation")
     parser.add_argument("--value-lr-multiplier", type=float, default=20.0,
                         help="Value head LR = lr * multiplier for faster value convergence")
     parser.add_argument("--value-finetune-epochs", type=int, default=3,
@@ -149,13 +156,62 @@ def masked_categorical_kl(
     return kl_per_sample.mean()
 
 
+class AwrDiagnostics:
+    def __init__(self) -> None:
+        self.count = 0
+        self.adv_sum = 0.0
+        self.adv_sq_sum = 0.0
+        self.adv_pos_count = 0
+        self.weight_sum = 0.0
+        self.weight_max = 0.0
+        self.active_weight_count = 0
+
+    def update(self, advantage: torch.Tensor, weights: torch.Tensor) -> None:
+        adv = advantage.detach().float().cpu()
+        w = weights.detach().float().cpu()
+        count = int(adv.numel())
+        if count == 0:
+            return
+        self.count += count
+        self.adv_sum += float(adv.sum().item())
+        self.adv_sq_sum += float((adv * adv).sum().item())
+        self.adv_pos_count += int((adv > 0).sum().item())
+        self.weight_sum += float(w.sum().item())
+        self.weight_max = max(self.weight_max, float(w.max().item()))
+        self.active_weight_count += int((w > 0).sum().item())
+
+    def summary(self) -> dict[str, float]:
+        if self.count == 0:
+            return {
+                "adv_mean": 0.0,
+                "adv_std": 0.0,
+                "adv_pos_rate": 0.0,
+                "weight_mean": 0.0,
+                "weight_max": 0.0,
+                "active_weight_rate": 0.0,
+            }
+        adv_mean = self.adv_sum / self.count
+        adv_var = max(self.adv_sq_sum / self.count - adv_mean * adv_mean, 0.0)
+        return {
+            "adv_mean": adv_mean,
+            "adv_std": math.sqrt(adv_var),
+            "adv_pos_rate": self.adv_pos_count / self.count,
+            "weight_mean": self.weight_sum / self.count,
+            "weight_max": self.weight_max,
+            "active_weight_rate": self.active_weight_count / self.count,
+        }
+
+
 def main() -> None:
     args = parse_args()
     torch.manual_seed(args.seed)
     device = torch.device(args.device if torch.cuda.is_available() else "cpu")
     best_value_ev = -1.0
 
-    ds = ArenaTrajectoryDataset(args.trajectories, gamma=args.gamma, policy_id=args.policy_id)
+    full_ds = ArenaTrajectoryDataset(args.trajectories, gamma=args.gamma, policy_id=args.policy_id)
+    train_rows, val_rows = split_rows_by_match_id(full_ds.rows, args.val_fraction, args.seed)
+    ds = ArenaTrajectoryDataset.from_rows(train_rows, gamma=args.gamma)
+    val_ds = ArenaTrajectoryDataset.from_rows(val_rows, gamma=args.gamma) if val_rows else None
 
     if args.adv_norm in ("per_match", "per_player"):
         values = [float(row.get("value", 0.0)) for row in ds.rows]
@@ -166,6 +222,16 @@ def main() -> None:
             row["advantage"] = norm_adv[i]
 
     loader = DataLoader(ds, batch_size=args.batch_size, shuffle=True)
+    val_loader = (
+        DataLoader(val_ds, batch_size=args.batch_size, shuffle=False)
+        if val_ds is not None
+        else None
+    )
+    val_variance = (
+        torch.tensor(val_ds.returns).float().var().item() + 1e-8
+        if val_ds is not None
+        else 0.0
+    )
 
     checkpoint = torch.load(args.checkpoint, map_location="cpu")
     model_config = ModelConfig.from_dict(checkpoint.get("model_config", {}))
@@ -206,6 +272,7 @@ def main() -> None:
         total_fan_distill_loss = 0.0
         total_fan_value_distill_loss = 0.0
         total_samples = 0
+        diagnostics = AwrDiagnostics()
 
         for batch in tqdm(loader, desc=f"AWR epoch {epoch+1}/{args.epochs}"):
             batch = {k: v.to(device) for k, v in batch.items()}
@@ -232,6 +299,7 @@ def main() -> None:
                     weight_clip=args.weight_clip,
                     policy_filter=args.policy_filter,
                 )
+                diagnostics.update(_advantage, weights)
 
             action_head = batch["action_head"]
 
@@ -313,11 +381,23 @@ def main() -> None:
         avg_kl = total_kl_loss / len(loader)
         avg_fan = total_fan_distill_loss / len(loader)
         avg_fan_value = total_fan_value_distill_loss / len(loader)
+        diag_metrics = diagnostics.summary()
         explained_var = 1.0 - avg_value / (torch.tensor(ds.returns).float().var().item() + 1e-8)
+        val_mse = evaluate_value_mse(model, val_loader, device) if val_loader is not None else None
+        val_ev = 1.0 - val_mse / val_variance if val_mse is not None else None
+        val_text = (
+            f" val_mse={val_mse:.6f} val_ev={val_ev:.4f}"
+            if val_mse is not None and val_ev is not None
+            else ""
+        )
+        selection_ev = val_ev if val_ev is not None else explained_var
         print(
             f"Epoch {epoch+1}: policy_loss={avg_policy:.6f} "
             f"value_mse={avg_value:.6f} value_ev={explained_var:.4f} "
-            f"kl_loss={avg_kl:.6f} fan_d={avg_fan:.6f} fanv_d={avg_fan_value:.6f} "
+            f"kl_loss={avg_kl:.6f}{val_text} fan_d={avg_fan:.6f} fanv_d={avg_fan_value:.6f} "
+            f"adv_mean={diag_metrics['adv_mean']:.4f} adv_std={diag_metrics['adv_std']:.4f} "
+            f"adv_pos={diag_metrics['adv_pos_rate']:.4f} weight_mean={diag_metrics['weight_mean']:.4f} "
+            f"weight_max={diag_metrics['weight_max']:.4f} active_weight={diag_metrics['active_weight_rate']:.4f} "
             f"samples={total_samples}"
         )
 
@@ -332,15 +412,18 @@ def main() -> None:
                     "policy_loss": avg_policy,
                     "value_mse": avg_value,
                     "value_explained_variance": explained_var,
+                    "val_value_mse": val_mse,
+                    "val_value_explained_variance": val_ev,
                     "kl_loss": avg_kl,
+                    **diag_metrics,
                 },
             },
             args.output_dir / f"awr_epoch_{epoch+1:03d}.pt",
         )
 
-        # Track best checkpoint by value_ev
-        if explained_var > best_value_ev:
-            best_value_ev = explained_var
+        # Track best checkpoint by validation EV when available, otherwise train EV.
+        if selection_ev > best_value_ev:
+            best_value_ev = selection_ev
             torch.save(
                 {
                     "model_state": {k: v.clone() for k, v in model.state_dict().items()},
@@ -352,7 +435,10 @@ def main() -> None:
                         "policy_loss": avg_policy,
                         "value_mse": avg_value,
                         "value_explained_variance": explained_var,
+                        "val_value_mse": val_mse,
+                        "val_value_explained_variance": val_ev,
                         "kl_loss": avg_kl,
+                        **diag_metrics,
                     },
                 },
                 args.output_dir / "awr_best.pt",
@@ -389,6 +475,8 @@ def main() -> None:
             print(f"  value_ft epoch {ve+1}: mse={avg_vl:.6f} ev={vev:.4f}")
             avg_value = avg_vl
             explained_var = vev
+            val_mse = evaluate_value_mse(model, val_loader, device) if val_loader is not None else None
+            val_ev = 1.0 - val_mse / val_variance if val_mse is not None else None
         value_finetuned = True
 
     if value_finetuned or best_value_ev < 0:
@@ -403,14 +491,41 @@ def main() -> None:
                     "policy_loss": avg_policy,
                     "value_mse": avg_value,
                     "value_explained_variance": explained_var,
+                    "val_value_mse": val_mse,
+                    "val_value_explained_variance": val_ev,
                     "kl_loss": avg_kl,
                     "value_finetune_epochs": args.value_finetune_epochs,
+                    **diag_metrics,
                 },
             },
             args.output_dir / "awr_best.pt",
         )
         best_value_ev = max(best_value_ev, explained_var)
     print(f"Saved to {args.output_dir} (best value_ev={best_value_ev:.4f})")
+
+
+def evaluate_value_mse(
+    model: torch.nn.Module,
+    loader: DataLoader | None,
+    device: torch.device,
+) -> float | None:
+    if loader is None:
+        return None
+    model.eval()
+    total_loss = 0.0
+    with torch.no_grad():
+        for batch in loader:
+            batch = {k: v.to(device) for k, v in batch.items()}
+            outputs = model(
+                batch["tile_planes"],
+                batch["scalar_features"],
+                batch["discard_sequence"],
+            )
+            value = outputs["value"].squeeze(-1)
+            returns = batch["return"].float()
+            total_loss += F.mse_loss(value, returns).item()
+    model.train()
+    return total_loss / len(loader)
 
 
 if __name__ == "__main__":

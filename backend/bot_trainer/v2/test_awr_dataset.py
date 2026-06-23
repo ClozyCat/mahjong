@@ -6,18 +6,22 @@ import torch
 import pytest
 
 from train_awr import (
+    AwrDiagnostics,
     advantage_weights,
     compute_ce_loss_for_action,
     masked_categorical_kl,
 )
+from candidate_gate import evaluate_candidate, evaluate_candidate_matrix
 from awr_dataset import (
     ArenaTrajectoryDataset,
     encode_row,
     compute_discounted_returns_for_rows,
     compute_normalized_advantages,
     action_head_index,
+    split_rows_by_match_id,
     trajectory_diagnostics,
 )
+from arena_summary import paired_subject_deltas
 
 
 def make_sample_row(**overrides) -> dict:
@@ -130,6 +134,33 @@ class TestArenaTrajectoryDataset:
         assert diag["row_count"] == 4
         assert diag["action_head_discard"] == 3
         assert diag["action_head_claim"] == 1
+
+    def test_from_rows_builds_dataset_without_jsonl_file(self):
+        rows = [make_sample_row(match_id="m1", decision_index=0, reward=1.0)]
+
+        ds = ArenaTrajectoryDataset.from_rows(rows, gamma=0.99)
+
+        assert len(ds) == 1
+        assert ds[0]["return"].item() == pytest.approx(1.0)
+
+    def test_split_rows_by_match_id_is_deterministic_and_keeps_matches_intact(self):
+        rows = [
+            make_sample_row(match_id="m1", decision_index=0),
+            make_sample_row(match_id="m1", decision_index=1),
+            make_sample_row(match_id="m2", decision_index=2),
+            make_sample_row(match_id="m2", decision_index=3),
+            make_sample_row(match_id="m3", decision_index=4),
+            make_sample_row(match_id="m3", decision_index=5),
+            make_sample_row(match_id="m4", decision_index=6),
+            make_sample_row(match_id="m4", decision_index=7),
+        ]
+
+        train_rows, val_rows = split_rows_by_match_id(rows, val_fraction=0.25, seed=7)
+
+        assert len(val_rows) == 2
+        assert len(train_rows) == 6
+        assert {row["match_id"] for row in val_rows} == {"m4"}
+        assert not ({row["match_id"] for row in train_rows} & {row["match_id"] for row in val_rows})
 
 
 class TestNormalizedAdvantages:
@@ -296,3 +327,140 @@ class TestAwrWeights:
 
         assert loss.item() == pytest.approx(0.0)
         assert torch.isfinite(logits.grad).all()
+
+
+class TestAwrDiagnostics:
+    def test_accumulates_advantage_and_weight_metrics(self):
+        diagnostics = AwrDiagnostics()
+
+        diagnostics.update(
+            advantage=torch.tensor([-1.0, 0.0, 2.0]),
+            weights=torch.tensor([0.0, 1.0, 4.0]),
+        )
+        metrics = diagnostics.summary()
+
+        assert metrics["adv_mean"] == pytest.approx(1.0 / 3.0)
+        assert metrics["adv_pos_rate"] == pytest.approx(1.0 / 3.0)
+        assert metrics["weight_mean"] == pytest.approx(5.0 / 3.0)
+        assert metrics["weight_max"] == pytest.approx(4.0)
+        assert metrics["active_weight_rate"] == pytest.approx(2.0 / 3.0)
+        assert metrics["adv_std"] > 0.0
+
+
+class TestCandidateGatePairedSubjects:
+    def test_uses_reverse_paired_key_with_candidate_oriented_delta(self):
+        summary = {
+            "policies": {
+                "baseline_neural": make_policy_summary(avg_score_delta=0.0),
+                "awr_candidate_neural": make_policy_summary(avg_score_delta=10.0),
+            },
+            "paired_subjects": {
+                "awr_candidate_neural__vs__baseline_neural": {
+                    "baseline_policy": "awr_candidate_neural",
+                    "candidate_policy": "baseline_neural",
+                    "avg_score_delta": -10.0,
+                    "confidence95_low": -15.0,
+                    "confidence95_high": -5.0,
+                    "positive_delta_rate": 0.2,
+                    "min_score_delta": -20.0,
+                    "max_score_delta": -1.0,
+                }
+            },
+        }
+
+        result = evaluate_candidate(
+            summary,
+            baseline_policy="baseline_neural",
+            candidate_policy="awr_candidate_neural",
+        )
+
+        paired = result["promotion_report"]["paired"]
+        assert paired["baseline_policy"] == "baseline_neural"
+        assert paired["candidate_policy"] == "awr_candidate_neural"
+        assert paired["avg_score_delta"] == pytest.approx(10.0)
+        assert paired["confidence95_low"] == pytest.approx(5.0)
+        assert paired["confidence95_high"] == pytest.approx(15.0)
+        assert "paired_subjects_missing" not in result["promotion_report"]["warnings"]
+
+    def test_matrix_rejects_high_latency_even_when_weighted_metrics_pass(self):
+        summary = make_gate_summary(
+            baseline=make_policy_summary(avg_score_delta=0.0, win_rate=0.5, deal_in_rate=0.2),
+            candidate=make_policy_summary(
+                avg_score_delta=10.0,
+                win_rate=0.6,
+                deal_in_rate=0.1,
+                avg_latency_ms_per_decision=250.0,
+            ),
+        )
+
+        result = evaluate_candidate_matrix([summary], pool_path=None)
+
+        assert result["accepted"] is False
+        assert "latency" in result["all_failures"]
+
+    def test_matrix_rejects_paired_ci_crossing_zero_when_paired_data_exists(self):
+        summary = make_gate_summary(
+            baseline=make_policy_summary(avg_score_delta=0.0, win_rate=0.5, deal_in_rate=0.2),
+            candidate=make_policy_summary(avg_score_delta=10.0, win_rate=0.6, deal_in_rate=0.1),
+            paired={
+                "baseline_neural__vs__awr_candidate_neural": {
+                    "baseline_policy": "baseline_neural",
+                    "candidate_policy": "awr_candidate_neural",
+                    "paired_match_count": 20,
+                    "avg_score_delta": 10.0,
+                    "confidence95_low": -1.0,
+                    "confidence95_high": 21.0,
+                }
+            },
+        )
+
+        result = evaluate_candidate_matrix([summary], pool_path=None)
+
+        assert result["accepted"] is False
+        assert "paired_confidence" in result["all_failures"]
+
+    def test_arena_summary_emits_both_paired_key_directions(self):
+        paired = paired_subject_deltas({
+            (1, 0): {
+                "baseline_neural": 10.0,
+                "awr_candidate_neural": 15.0,
+            },
+            (2, 0): {
+                "baseline_neural": 20.0,
+                "awr_candidate_neural": 18.0,
+            },
+        })
+
+        assert "baseline_neural__vs__awr_candidate_neural" in paired
+        assert "awr_candidate_neural__vs__baseline_neural" in paired
+        assert paired["baseline_neural__vs__awr_candidate_neural"]["avg_score_delta"] == pytest.approx(1.5)
+        assert paired["awr_candidate_neural__vs__baseline_neural"]["avg_score_delta"] == pytest.approx(-1.5)
+
+
+def make_policy_summary(**overrides) -> dict:
+    summary = {
+        "avg_score_delta": 0.0,
+        "win_rate": 0.5,
+        "deal_in_rate": 0.1,
+        "avg_first_tenpai_turn": 12.0,
+        "final_tenpai_rate": 0.5,
+        "avg_claims": 10.0,
+        "avg_latency_ms_per_decision": 1.0,
+    }
+    summary.update(overrides)
+    return summary
+
+
+def make_gate_summary(
+    *,
+    baseline: dict,
+    candidate: dict,
+    paired: dict | None = None,
+) -> dict:
+    return {
+        "policies": {
+            "baseline_neural": baseline,
+            "awr_candidate_neural": candidate,
+        },
+        "paired_subjects": paired or {},
+    }

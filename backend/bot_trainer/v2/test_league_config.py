@@ -33,6 +33,37 @@ def test_trajectory_config_uses_learner_for_subject_and_three_sampled_opponents(
     assert all("display_name" not in opponent for opponent in config["opponents"])
 
 
+def test_trajectory_config_splits_matches_and_resamples_opponents() -> None:
+    pool = {
+        "learner": {
+            "id": "learner",
+            "model_path": "backend/assets/sft/sft.onnx",
+        },
+        "rollout_opponents": [
+            {"id": "sft_cold", "model_path": "sft.onnx", "weight": 1},
+            {"id": "sft_warm", "model_path": "sft.onnx", "weight": 1},
+            {"id": "sft_hot", "model_path": "sft.onnx", "weight": 1},
+            {"id": "sft_wild", "model_path": "sft.onnx", "weight": 1},
+        ],
+    }
+
+    configs = build_trajectory_configs(
+        pool,
+        matches=5,
+        seed=7,
+        max_actions=20,
+        chunk_matches=2,
+    )
+
+    assert [config["matches"] for config in configs] == [2, 2, 1]
+    assert [config["seed"] for config in configs] == [7, 1007, 2007]
+    opponent_sets = [
+        tuple(opponent["id"] for opponent in config["opponents"])
+        for config in configs
+    ]
+    assert len(set(opponent_sets)) > 1
+
+
 def test_eval_config_supplies_three_baseline_opponents() -> None:
     pool = {"learner": {"id": "learner", "model_path": "unused.onnx"}, "opponents": []}
 

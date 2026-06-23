@@ -4,7 +4,6 @@ import argparse
 import json
 import math
 from collections import defaultdict
-from itertools import combinations
 from pathlib import Path
 from typing import Any
 
@@ -128,21 +127,24 @@ def paired_subject_deltas(
         for subject_id in scores
     })
     paired: dict[str, Any] = {}
-    for baseline_id, candidate_id in combinations(subject_ids, 2):
-        deltas = [
-            scores[candidate_id] - scores[baseline_id]
-            for _, scores in sorted(subject_scores_by_pair.items())
-            if baseline_id in scores and candidate_id in scores
-        ]
-        if not deltas:
-            continue
-        key = f"{baseline_id}__vs__{candidate_id}"
-        paired[key] = {
-            "baseline_policy": baseline_id,
-            "candidate_policy": candidate_id,
-            "deltas": deltas,
-            **paired_delta_stats(deltas),
-        }
+    for baseline_id in subject_ids:
+        for candidate_id in subject_ids:
+            if baseline_id == candidate_id:
+                continue
+            deltas = [
+                scores[candidate_id] - scores[baseline_id]
+                for _, scores in sorted(subject_scores_by_pair.items())
+                if baseline_id in scores and candidate_id in scores
+            ]
+            if not deltas:
+                continue
+            key = f"{baseline_id}__vs__{candidate_id}"
+            paired[key] = {
+                "baseline_policy": baseline_id,
+                "candidate_policy": candidate_id,
+                "deltas": deltas,
+                **paired_delta_stats(deltas),
+            }
     return paired
 
 

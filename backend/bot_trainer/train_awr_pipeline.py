@@ -18,6 +18,7 @@ def parse_args() -> argparse.Namespace:
     p = argparse.ArgumentParser(description="AWR Training Pipeline")
     p.add_argument("--iterations", type=int, default=3)
     p.add_argument("--trajectory-matches", type=int, default=200)
+    p.add_argument("--trajectory-chunk-matches", type=int, default=50)
     p.add_argument("--matrix-matches", type=int, default=20)
     p.add_argument("--seed", default=datetime.now().strftime("%Y%m%d"))
     p.add_argument("--sft-onnx", default="backend/assets/sft/sft.onnx")
@@ -159,6 +160,7 @@ def main() -> None:
             "--matches", str(args.trajectory_matches),
             "--seed", str(iter_seed),
             "--mode", "trajectory",
+            "--trajectory-chunk-matches", str(args.trajectory_chunk_matches),
         ]
         # Only override with SFT for iter 0 (before any AWR model exists)
         if iter_num == 0:

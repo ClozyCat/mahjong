@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import random
 from pathlib import Path
 from typing import Any
 
@@ -29,6 +30,17 @@ class ArenaTrajectoryDataset(Dataset):
             rows = [row for row in rows if row.get("policy_id") == policy_id]
         self.rows = rows
         self.returns = compute_discounted_returns_for_rows(self.rows, gamma=gamma)
+
+    @classmethod
+    def from_rows(
+        cls,
+        rows: list[dict[str, Any]],
+        gamma: float = 0.995,
+    ) -> "ArenaTrajectoryDataset":
+        dataset = cls.__new__(cls)
+        dataset.rows = list(rows)
+        dataset.returns = compute_discounted_returns_for_rows(dataset.rows, gamma=gamma)
+        return dataset
 
     def __len__(self) -> int:
         return len(self.rows)
@@ -90,6 +102,26 @@ def compute_discounted_returns_for_rows(
             running = float(rows[index]["reward"]) + gamma * running
             returns[index] = round(running, 6)
     return returns
+
+
+def split_rows_by_match_id(
+    rows: list[dict[str, Any]],
+    val_fraction: float,
+    seed: int,
+) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
+    if not rows or val_fraction <= 0.0:
+        return list(rows), []
+    match_ids = sorted({str(row["match_id"]) for row in rows})
+    if len(match_ids) < 2:
+        return list(rows), []
+    rng = random.Random(seed)
+    rng.shuffle(match_ids)
+    val_count = max(1, round(len(match_ids) * min(val_fraction, 1.0)))
+    val_count = min(val_count, len(match_ids) - 1)
+    val_match_ids = set(match_ids[:val_count])
+    train_rows = [row for row in rows if str(row["match_id"]) not in val_match_ids]
+    val_rows = [row for row in rows if str(row["match_id"]) in val_match_ids]
+    return train_rows, val_rows
 
 
 def compute_normalized_advantages(

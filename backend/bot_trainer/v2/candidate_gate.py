@@ -31,8 +31,11 @@ def evaluate_candidate(
 ) -> dict[str, Any]:
     baseline = summary["policies"][baseline_policy]
     candidate = summary["policies"][candidate_policy]
-    paired_key = f"{baseline_policy}__vs__{candidate_policy}"
-    paired = summary.get("paired_subjects", {}).get(paired_key)
+    paired = paired_subject_summary(
+        summary.get("paired_subjects", {}),
+        baseline_policy,
+        candidate_policy,
+    )
     report = build_promotion_report(baseline, candidate, paired)
     failures: list[str] = []
     failure_details: list[dict[str, Any]] = []
@@ -55,6 +58,15 @@ def evaluate_candidate(
     if not report["latency"]["passed"]:
         failures.append("latency")
         failure_details.append(non_metric_failure_detail("latency", report))
+    if "paired_confidence_interval_crosses_zero" in report["warnings"]:
+        failures.append("paired_confidence")
+        failure_details.append({
+            "metric": "paired_confidence",
+            "baseline": None,
+            "candidate": paired,
+            "threshold": "confidence95_low_gt_0",
+            "margin": paired.get("confidence95_low") if paired else None,
+        })
 
     return {
         "accepted": not failures,
@@ -65,6 +77,45 @@ def evaluate_candidate(
         "paired": paired,
         "promotion_report": report,
     }
+
+
+def paired_subject_summary(
+    paired_subjects: dict[str, Any],
+    baseline_policy: str,
+    candidate_policy: str,
+) -> dict[str, Any] | None:
+    forward_key = f"{baseline_policy}__vs__{candidate_policy}"
+    forward = paired_subjects.get(forward_key)
+    if forward is not None:
+        return forward
+
+    reverse_key = f"{candidate_policy}__vs__{baseline_policy}"
+    reverse = paired_subjects.get(reverse_key)
+    if reverse is None:
+        return None
+    return reverse_paired_summary(reverse, baseline_policy, candidate_policy)
+
+
+def reverse_paired_summary(
+    paired: dict[str, Any],
+    baseline_policy: str,
+    candidate_policy: str,
+) -> dict[str, Any]:
+    result = dict(paired)
+    result["baseline_policy"] = baseline_policy
+    result["candidate_policy"] = candidate_policy
+    for key in ("avg_score_delta", "min_score_delta", "max_score_delta"):
+        if result.get(key) is not None:
+            result[key] = -float(result[key])
+    low = result.get("confidence95_low")
+    high = result.get("confidence95_high")
+    if low is not None and high is not None:
+        result["confidence95_low"] = -float(high)
+        result["confidence95_high"] = -float(low)
+    positive_rate = result.get("positive_delta_rate")
+    if positive_rate is not None:
+        result["positive_delta_rate"] = 1.0 - float(positive_rate)
+    return result
 
 
 def build_promotion_report(
@@ -314,6 +365,7 @@ def evaluate_candidate_matrix(
         weighted_metrics.get("avg_score_delta", -1.0) > 0
         and weighted_metrics.get("win_rate", -1.0) >= 0
         and weighted_metrics.get("deal_in_rate", -1.0) >= 0
+        and not all_failures
     )
 
     return {
