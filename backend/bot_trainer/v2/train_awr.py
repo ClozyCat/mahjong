@@ -33,9 +33,9 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--adv-norm", default="per_match",
                         choices=["none", "per_match", "per_player", "batch"],
                         help="Advantage normalization mode")
-    parser.add_argument("--adv-source", default="terminal",
-                        choices=["value", "terminal"],
-                        help="value = return - V(s); terminal = terminal_reward only (no value head needed)")
+    parser.add_argument("--adv-source", default="return",
+                        choices=["value", "terminal", "return"],
+                        help="value = return - V(s); terminal = terminal_reward only; return = MC return directly")
     parser.add_argument("--head-weights", default="1.0,3.0,5.0,5.0",
                         help="Comma-separated weights for discard,claim,self_kong,hu")
     parser.add_argument("--kl-coef", type=float, default=0.01,
@@ -96,6 +96,15 @@ def advantage_weights(
 ) -> tuple[torch.Tensor, torch.Tensor]:
     if adv_source == "terminal" and terminal_reward is not None:
         advantage = terminal_reward.float()
+        if adv_norm == "batch":
+            adv_mean = advantage.mean()
+            adv_std = advantage.std(unbiased=False) + 1e-8
+            advantage = (advantage - adv_mean) / adv_std
+            advantage = advantage.clamp(-5.0, 5.0)
+        elif adv_norm == "none":
+            advantage = advantage.clamp(-5.0, 5.0)
+    elif adv_source == "return":
+        advantage = returns.float()
         if adv_norm == "batch":
             adv_mean = advantage.mean()
             adv_std = advantage.std(unbiased=False) + 1e-8
