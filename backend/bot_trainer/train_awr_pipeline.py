@@ -218,10 +218,9 @@ def main() -> None:
             "--policy-id", "learner",
         ])
 
-        # 3. AWR training — KL reference uses previous AWR (or SFT for iter 0)
+        # 3. AWR training — KL reference always anchors to SFT for stability
         print("[3/4] Running AWR training...")
         awr_dir = output_dir / f"iter_{iter_num}" / "awr_checkpoints"
-        kl_ref = prev_awr if prev_awr.exists() else base_ckpt
         run([
             sys.executable, "backend/bot_trainer/v2/train_awr.py",
             "--trajectories", str(traj_out),
@@ -232,7 +231,7 @@ def main() -> None:
             "--batch-size", "512",
             "--lr", "3e-5",
             "--temperature", "0.5",
-            "--sft-checkpoint", str(kl_ref),
+            "--sft-checkpoint", str(base_ckpt),
             "--policy-id", "learner",
         ])
 

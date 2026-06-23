@@ -41,7 +41,7 @@ def parse_args() -> argparse.Namespace:
                         help="MSE distillation loss for qualifying_fan_value against SFT reference")
     parser.add_argument("--fan-value-distill-coef", type=float, default=0.05,
                         help="MSE distillation loss for fan_value against SFT reference")
-    parser.add_argument("--value-loss-coef", type=float, default=2.0,
+    parser.add_argument("--value-loss-coef", type=float, default=4.0,
                         help="Weight for value loss in total loss")
     parser.add_argument("--value-lr-multiplier", type=float, default=20.0,
                         help="Value head LR = lr * multiplier for faster value convergence")
