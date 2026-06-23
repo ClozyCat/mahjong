@@ -268,6 +268,26 @@ class TestAwrWeights:
         assert weights[0].item() == pytest.approx(0.0)
         assert weights[1].item() > 1.0
 
+    def test_value_source_uses_current_value_when_precomputed_advantage_disabled(self):
+        returns = torch.tensor([2.0, 2.0])
+        values = torch.tensor([3.0, 0.0])
+        precomputed = torch.tensor([2.0, -2.0])
+
+        weights, advantage = advantage_weights(
+            returns,
+            values,
+            precomputed,
+            adv_norm="batch",
+            adv_source="value",
+            temperature=1.0,
+            weight_clip=20.0,
+            policy_filter="positive",
+        )
+
+        assert advantage.tolist() == pytest.approx([-1.0, 1.0])
+        assert weights[0].item() == pytest.approx(0.0)
+        assert weights[1].item() > 1.0
+
     def test_return_source_ignores_precomputed_advantage(self):
         returns = torch.tensor([-2.0, 2.0])
         values = torch.tensor([0.0, 0.0])

@@ -1146,7 +1146,7 @@ fn assign_terminal_rewards(rows: &mut [ArenaTrajectoryRow], report: &ArenaMatchR
 fn terminal_reward_for_seat(seat: &ArenaSeatMetrics) -> f32 {
     let score_reward = seat.score_delta as f32 / 100.0;
     let win_bonus = if seat.wins > 0 { 1.0 } else { 0.0 };
-    let deal_in_penalty = if seat.dealt_in > 0 { -1.5 } else { 0.0 };
+    let deal_in_penalty = if seat.dealt_in > 0 { -2.0 } else { 0.0 };
     score_reward + win_bonus + deal_in_penalty
 }
 
@@ -1791,9 +1791,9 @@ mod tests {
         assert_eq!(rows[0].reward, 0.01);
         assert_eq!(rows[1].reward, 0.02);
         assert_eq!(rows[2].terminal_reward, 1.2);
-        assert_eq!(rows[3].terminal_reward, -1.7);
+        assert_eq!(rows[3].terminal_reward, -2.2);
         assert_eq!(rows[2].reward, 1.23);
-        assert_eq!(rows[3].reward, -1.6600001);
+        assert_eq!(rows[3].reward, -2.16);
     }
 
     #[test]

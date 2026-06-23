@@ -143,6 +143,13 @@ def test_awr_wrapper_uses_v2_sft_checkpoint_and_rollout_override() -> None:
     assert "--temperature" in script and "args.awr_temperature" in script
     assert "--weight-clip" in script and "args.awr_weight_clip" in script
     assert "--awr-epochs" in script
+    assert "--awr-lr" in script and "args.awr_lr" in script
+    assert "--awr-kl-coef" in script and "args.awr_kl_coef" in script
+    assert "--awr-value-finetune-epochs" in script
+    assert "args.awr_value_finetune_epochs" in script
+    assert "--adv-norm" in script and "batch" in script
+    assert "--value-loss-coef" in script and "0.0" in script
+    assert "--kl-coef" in script
     assert "--sft-checkpoint" in script
     assert '"--sft-checkpoint", args.sft_checkpoint' in script
     assert '"--risk-value-checkpoint", args.sft_checkpoint' in script

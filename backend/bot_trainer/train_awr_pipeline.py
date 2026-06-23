@@ -23,6 +23,9 @@ def parse_args() -> argparse.Namespace:
     p.add_argument("--awr-epochs", type=int, default=3)
     p.add_argument("--awr-temperature", type=float, default=1.0)
     p.add_argument("--awr-weight-clip", type=float, default=10.0)
+    p.add_argument("--awr-lr", type=float, default=1e-5)
+    p.add_argument("--awr-kl-coef", type=float, default=0.03)
+    p.add_argument("--awr-value-finetune-epochs", type=int, default=0)
     p.add_argument("--seed", default=datetime.now().strftime("%Y%m%d"))
     p.add_argument("--sft-onnx", default="backend/assets/sft/sft.onnx")
     p.add_argument("--sft-checkpoint", default="backend/bot_trainer/v2/checkpoints/best.pt")
@@ -233,12 +236,15 @@ def main() -> None:
             "--checkpoint", str(value_ckpt),
             "--output-dir", str(awr_dir),
             "--epochs", str(args.awr_epochs),
-            "--value-finetune-epochs", "3",
+            "--value-finetune-epochs", str(args.awr_value_finetune_epochs),
             "--batch-size", "512",
-            "--lr", "3e-5",
+            "--lr", str(args.awr_lr),
             "--temperature", str(args.awr_temperature),
             "--weight-clip", str(args.awr_weight_clip),
+            "--adv-norm", "batch",
             "--adv-source", "value",
+            "--value-loss-coef", "0.0",
+            "--kl-coef", str(args.awr_kl_coef),
             "--sft-checkpoint", args.sft_checkpoint,
             "--risk-value-checkpoint", args.sft_checkpoint,
             "--policy-id", "learner",

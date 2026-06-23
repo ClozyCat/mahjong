@@ -1,3 +1,4 @@
+PS>python .\train_awr_pipeline.py
 === AWR Training Pipeline ===
 Iterations: 3, TrajectoryMatches: 400, Seed: 20260623
 Working dir: C:\Users\ZY\Desktop\Projects\dist\mahjong
@@ -7,151 +8,148 @@ Copied pool: backend/bot_trainer/v2/opponent_pool.json -> output\awr_training\wo
 [1/4] Generating trajectories...
   RUN: C:\Python314\python.exe backend/bot_trainer/v2/league_config.py --pool output\awr_training\working_pool.json --output-dir output\awr_training\iter_0\configs --matches 400 --seed 20260623 --mode trajectory --trajectory-chunk-matches 50 --rollout-onnx backend/assets/sft/sft.onnx
   RUN: cargo run --release --manifest-path backend/Cargo.toml --bin bot_arena -- --config output\awr_training\iter_0\configs\trajectory_config_0.json --output output\awr_training\iter_0\trajectory_summary_trajectory_config_0.json --trajectories output\awr_training\iter_0\trajectories_trajectory_config_0.jsonl --jobs 4
-    Finished `release` profile [optimized] target(s) in 0.20s
+    Finished `release` profile [optimized] target(s) in 0.18s
      Running `backend\target\release\bot_arena.exe --config output\awr_training\iter_0\configs\trajectory_config_0.json --output output\awr_training\iter_0\trajectory_summary_trajectory_config_0.json --trajectories output\awr_training\iter_0\trajectories_trajectory_config_0.jsonl --jobs 4`
-[timing] match=0 actions=1571  inference=2214.6ms (76%)  game=372.8ms (13%)  trajectory=317.7ms (11%)
-[timing_detail] encode=0.011ms inference=1.412ms sample=0.002ms  (per-action, n=1213)
-[timing] match=10 actions=1490  inference=2319.7ms (72%)  game=429.1ms (13%)  trajectory=460.8ms (14%)
-[timing_detail] encode=0.012ms inference=1.531ms sample=0.002ms  (per-action, n=1143)
-[timing] match=20 actions=1264  inference=1558.3ms (74%)  game=303.6ms (14%)  trajectory=257.4ms (12%)
-[timing_detail] encode=0.010ms inference=1.212ms sample=0.002ms  (per-action, n=988)
-[timing] match=30 actions=1587  inference=1918.2ms (71%)  game=401.2ms (15%)  trajectory=370.9ms (14%)
-[timing_detail] encode=0.010ms inference=1.185ms sample=0.002ms  (per-action, n=1226)
-[timing] match=40 actions=1493  inference=1872.6ms (70%)  game=397.7ms (15%)  trajectory=387.7ms (15%)
-[timing_detail] encode=0.010ms inference=1.232ms sample=0.002ms  (per-action, n=1159)
+[timing] match=0 actions=1571  inference=1663.9ms (76%)  game=282.9ms (13%)  trajectory=229.7ms (11%)
+[timing_detail] encode=0.009ms inference=1.064ms sample=0.001ms  (per-action, n=1213)
+[timing] match=10 actions=1490  inference=1487.8ms (74%)  game=268.6ms (13%)  trajectory=253.7ms (13%)
+[timing_detail] encode=0.009ms inference=0.979ms sample=0.001ms  (per-action, n=1143)
+[timing] match=20 actions=1264  inference=1211.3ms (74%)  game=229.3ms (14%)  trajectory=191.9ms (12%)
+[timing_detail] encode=0.008ms inference=0.943ms sample=0.001ms  (per-action, n=988)
+[timing] match=30 actions=1587  inference=1552.0ms (72%)  game=325.3ms (15%)  trajectory=281.9ms (13%)
+[timing_detail] encode=0.009ms inference=0.962ms sample=0.001ms  (per-action, n=1226)
+[timing] match=40 actions=1493  inference=1918.7ms (71%)  game=419.1ms (15%)  trajectory=377.8ms (14%)
+[timing_detail] encode=0.011ms inference=1.264ms sample=0.002ms  (per-action, n=1159)
   RUN: cargo run --release --manifest-path backend/Cargo.toml --bin bot_arena -- --config output\awr_training\iter_0\configs\trajectory_config_1.json --output output\awr_training\iter_0\trajectory_summary_trajectory_config_1.json --trajectories output\awr_training\iter_0\trajectories_trajectory_config_1.jsonl --jobs 4
-    Finished `release` profile [optimized] target(s) in 0.21s
-     Running `backend\target\release\bot_arena.exe --config output\awr_training\iter_0\configs\trajectory_config_1.json --output output\awr_training\iter_0\trajectory_summary_trajectory_config_1.json --trajectories output\awr_training\iter_0\trajectories_trajectory_config_1.jsonl --jobs 4`
-[timing] match=0 actions=1434  inference=1523.2ms (76%)  game=251.2ms (13%)  trajectory=232.2ms (12%)
-[timing_detail] encode=0.009ms inference=1.068ms sample=0.001ms  (per-action, n=1124)
-[timing] match=10 actions=1320  inference=1375.5ms (75%)  game=236.7ms (13%)  trajectory=219.1ms (12%)
-[timing_detail] encode=0.009ms inference=1.031ms sample=0.002ms  (per-action, n=1024)
-[timing] match=20 actions=1196  inference=1416.5ms (74%)  game=275.6ms (14%)  trajectory=226.2ms (12%)
-[timing_detail] encode=0.009ms inference=1.166ms sample=0.002ms  (per-action, n=932)
-[timing] match=30 actions=1158  inference=1456.4ms (72%)  game=289.0ms (14%)  trajectory=269.7ms (13%)
-[timing_detail] encode=0.009ms inference=1.215ms sample=0.002ms  (per-action, n=863)
-[timing] match=40 actions=1470  inference=1858.3ms (70%)  game=403.2ms (15%)  trajectory=384.6ms (15%)
-[timing_detail] encode=0.010ms inference=1.225ms sample=0.002ms  (per-action, n=1162)
-  RUN: cargo run --release --manifest-path backend/Cargo.toml --bin bot_arena -- --config output\awr_training\iter_0\configs\trajectory_config_2.json --output output\awr_training\iter_0\trajectory_summary_trajectory_config_2.json --trajectories output\awr_training\iter_0\trajectories_trajectory_config_2.jsonl --jobs 4
-    Finished `release` profile [optimized] target(s) in 0.21s
-     Running `backend\target\release\bot_arena.exe --config output\awr_training\iter_0\configs\trajectory_config_2.json --output output\awr_training\iter_0\trajectory_summary_trajectory_config_2.json --trajectories output\awr_training\iter_0\trajectories_trajectory_config_2.jsonl --jobs 4`
-[timing] match=0 actions=1449  inference=2364.9ms (72%)  game=413.0ms (13%)  trajectory=495.7ms (15%)
-[timing_detail] encode=0.012ms inference=1.622ms sample=0.002ms  (per-action, n=1111)
-[timing] match=10 actions=1193  inference=1738.5ms (71%)  game=320.9ms (13%)  trajectory=374.0ms (15%)
-[timing_detail] encode=0.010ms inference=1.429ms sample=0.002ms  (per-action, n=910)
-[timing] match=20 actions=1206  inference=1198.3ms (74%)  game=212.7ms (13%)  trajectory=202.0ms (13%)
-[timing_detail] encode=0.008ms inference=0.983ms sample=0.001ms  (per-action, n=925)
-[timing] match=30 actions=1235  inference=1338.9ms (73%)  game=274.5ms (15%)  trajectory=222.6ms (12%)
-[timing_detail] encode=0.009ms inference=1.068ms sample=0.002ms  (per-action, n=950)
-[timing] match=40 actions=1284  inference=1334.2ms (70%)  game=272.4ms (14%)  trajectory=291.2ms (15%)
-[timing_detail] encode=0.009ms inference=1.016ms sample=0.001ms  (per-action, n=992)
-  RUN: cargo run --release --manifest-path backend/Cargo.toml --bin bot_arena -- --config output\awr_training\iter_0\configs\trajectory_config_3.json --output output\awr_training\iter_0\trajectory_summary_trajectory_config_3.json --trajectories output\awr_training\iter_0\trajectories_trajectory_config_3.jsonl --jobs 4
-    Finished `release` profile [optimized] target(s) in 0.19s
-     Running `backend\target\release\bot_arena.exe --config output\awr_training\iter_0\configs\trajectory_config_3.json --output output\awr_training\iter_0\trajectory_summary_trajectory_config_3.json --trajectories output\awr_training\iter_0\trajectories_trajectory_config_3.jsonl --jobs 4`
-[timing] match=0 actions=1048  inference=1101.2ms (77%)  game=175.9ms (12%)  trajectory=161.7ms (11%)
-[timing_detail] encode=0.008ms inference=1.053ms sample=0.001ms  (per-action, n=816)
-[timing] match=10 actions=1401  inference=1614.6ms (74%)  game=280.2ms (13%)  trajectory=288.8ms (13%)
-[timing_detail] encode=0.010ms inference=1.128ms sample=0.002ms  (per-action, n=1091)
-[timing] match=20 actions=1428  inference=1563.5ms (72%)  game=308.7ms (14%)  trajectory=298.7ms (14%)
-[timing_detail] encode=0.009ms inference=1.079ms sample=0.002ms  (per-action, n=1102)
-[timing] match=30 actions=1281  inference=1462.2ms (72%)  game=305.7ms (15%)  trajectory=262.4ms (13%)
-[timing_detail] encode=0.009ms inference=1.113ms sample=0.002ms  (per-action, n=1001)
-[timing] match=40 actions=1447  inference=1685.3ms (71%)  game=355.9ms (15%)  trajectory=324.8ms (14%)
-[timing_detail] encode=0.010ms inference=1.138ms sample=0.002ms  (per-action, n=1131)
-  RUN: cargo run --release --manifest-path backend/Cargo.toml --bin bot_arena -- --config output\awr_training\iter_0\configs\trajectory_config_4.json --output output\awr_training\iter_0\trajectory_summary_trajectory_config_4.json --trajectories output\awr_training\iter_0\trajectories_trajectory_config_4.jsonl --jobs 4
-    Finished `release` profile [optimized] target(s) in 0.18s
-     Running `backend\target\release\bot_arena.exe --config output\awr_training\iter_0\configs\trajectory_config_4.json --output output\awr_training\iter_0\trajectory_summary_trajectory_config_4.json --trajectories output\awr_training\iter_0\trajectories_trajectory_config_4.jsonl --jobs 4`
-[timing] match=0 actions=1270  inference=1248.7ms (76%)  game=196.5ms (12%)  trajectory=194.1ms (12%)
-[timing_detail] encode=0.009ms inference=0.999ms sample=0.001ms  (per-action, n=969)
-[timing] match=10 actions=1325  inference=1258.1ms (75%)  game=207.0ms (12%)  trajectory=206.1ms (12%)
-[timing_detail] encode=0.008ms inference=0.942ms sample=0.001ms  (per-action, n=999)
-[timing] match=20 actions=1385  inference=1281.4ms (75%)  game=233.6ms (14%)  trajectory=198.2ms (12%)
-[timing_detail] encode=0.009ms inference=0.918ms sample=0.001ms  (per-action, n=1079)
-[timing] match=30 actions=1465  inference=1496.6ms (72%)  game=303.9ms (15%)  trajectory=278.0ms (13%)
-[timing_detail] encode=0.010ms inference=1.006ms sample=0.001ms  (per-action, n=1125)
-[timing] match=40 actions=1360  inference=1362.3ms (73%)  game=274.0ms (15%)  trajectory=229.4ms (12%)
-[timing_detail] encode=0.009ms inference=0.979ms sample=0.001ms  (per-action, n=1065)
-  RUN: cargo run --release --manifest-path backend/Cargo.toml --bin bot_arena -- --config output\awr_training\iter_0\configs\trajectory_config_5.json --output output\awr_training\iter_0\trajectory_summary_trajectory_config_5.json --trajectories output\awr_training\iter_0\trajectories_trajectory_config_5.jsonl --jobs 4
     Finished `release` profile [optimized] target(s) in 0.16s
+     Running `backend\target\release\bot_arena.exe --config output\awr_training\iter_0\configs\trajectory_config_1.json --output output\awr_training\iter_0\trajectory_summary_trajectory_config_1.json --trajectories output\awr_training\iter_0\trajectories_trajectory_config_1.jsonl --jobs 4`
+[timing] match=0 actions=1434  inference=1719.3ms (76%)  game=287.2ms (13%)  trajectory=268.4ms (12%)
+[timing_detail] encode=0.010ms inference=1.194ms sample=0.002ms  (per-action, n=1124)
+[timing] match=10 actions=1320  inference=1746.3ms (75%)  game=299.0ms (13%)  trajectory=297.0ms (13%)
+[timing_detail] encode=0.010ms inference=1.309ms sample=0.002ms  (per-action, n=1024)
+[timing] match=20 actions=1196  inference=1928.3ms (73%)  game=374.9ms (14%)  trajectory=330.4ms (13%)
+[timing_detail] encode=0.011ms inference=1.568ms sample=0.002ms  (per-action, n=932)
+[timing] match=30 actions=1158  inference=1344.5ms (73%)  game=265.1ms (14%)  trajectory=236.6ms (13%)
+[timing_detail] encode=0.008ms inference=1.137ms sample=0.002ms  (per-action, n=863)
+[timing] match=40 actions=1470  inference=1709.4ms (72%)  game=349.1ms (15%)  trajectory=314.3ms (13%)
+[timing_detail] encode=0.010ms inference=1.148ms sample=0.002ms  (per-action, n=1162)
+  RUN: cargo run --release --manifest-path backend/Cargo.toml --bin bot_arena -- --config output\awr_training\iter_0\configs\trajectory_config_2.json --output output\awr_training\iter_0\trajectory_summary_trajectory_config_2.json --trajectories output\awr_training\iter_0\trajectories_trajectory_config_2.jsonl --jobs 4
+    Finished `release` profile [optimized] target(s) in 0.18s
+     Running `backend\target\release\bot_arena.exe --config output\awr_training\iter_0\configs\trajectory_config_2.json --output output\awr_training\iter_0\trajectory_summary_trajectory_config_2.json --trajectories output\awr_training\iter_0\trajectories_trajectory_config_2.jsonl --jobs 4`
+[timing] match=0 actions=1449  inference=1679.5ms (74%)  game=278.3ms (12%)  trajectory=318.4ms (14%)
+[timing_detail] encode=0.010ms inference=1.161ms sample=0.002ms  (per-action, n=1111)
+[timing] match=10 actions=1193  inference=1476.5ms (72%)  game=267.8ms (13%)  trajectory=300.7ms (15%)
+[timing_detail] encode=0.009ms inference=1.213ms sample=0.002ms  (per-action, n=910)
+[timing] match=20 actions=1206  inference=1354.7ms (72%)  game=257.3ms (14%)  trajectory=257.0ms (14%)
+[timing_detail] encode=0.009ms inference=1.108ms sample=0.002ms  (per-action, n=925)
+[timing] match=30 actions=1235  inference=1270.5ms (73%)  game=258.8ms (15%)  trajectory=209.8ms (12%)
+[timing_detail] encode=0.009ms inference=1.016ms sample=0.001ms  (per-action, n=950)
+[timing] match=40 actions=1284  inference=1275.6ms (71%)  game=248.5ms (14%)  trajectory=264.4ms (15%)
+[timing_detail] encode=0.009ms inference=0.969ms sample=0.002ms  (per-action, n=992)
+  RUN: cargo run --release --manifest-path backend/Cargo.toml --bin bot_arena -- --config output\awr_training\iter_0\configs\trajectory_config_3.json --output output\awr_training\iter_0\trajectory_summary_trajectory_config_3.json --trajectories output\awr_training\iter_0\trajectories_trajectory_config_3.jsonl --jobs 4
+    Finished `release` profile [optimized] target(s) in 0.20s
+     Running `backend\target\release\bot_arena.exe --config output\awr_training\iter_0\configs\trajectory_config_3.json --output output\awr_training\iter_0\trajectory_summary_trajectory_config_3.json --trajectories output\awr_training\iter_0\trajectories_trajectory_config_3.jsonl --jobs 4`
+[timing] match=0 actions=1048  inference=1590.3ms (75%)  game=263.3ms (13%)  trajectory=252.8ms (12%)
+[timing_detail] encode=0.010ms inference=1.510ms sample=0.002ms  (per-action, n=816)
+[timing] match=10 actions=1401  inference=1479.6ms (74%)  game=256.4ms (13%)  trajectory=251.5ms (13%)
+[timing_detail] encode=0.010ms inference=1.037ms sample=0.001ms  (per-action, n=1091)
+[timing] match=20 actions=1428  inference=1584.0ms (72%)  game=313.4ms (14%)  trajectory=313.1ms (14%)
+[timing_detail] encode=0.010ms inference=1.088ms sample=0.002ms  (per-action, n=1102)
+[timing] match=30 actions=1281  inference=1408.9ms (72%)  game=284.3ms (15%)  trajectory=253.2ms (13%)
+[timing_detail] encode=0.009ms inference=1.075ms sample=0.002ms  (per-action, n=1001)
+[timing] match=40 actions=1447  inference=1542.6ms (72%)  game=320.2ms (15%)  trajectory=284.0ms (13%)
+[timing_detail] encode=0.009ms inference=1.043ms sample=0.002ms  (per-action, n=1131)
+  RUN: cargo run --release --manifest-path backend/Cargo.toml --bin bot_arena -- --config output\awr_training\iter_0\configs\trajectory_config_4.json --output output\awr_training\iter_0\trajectory_summary_trajectory_config_4.json --trajectories output\awr_training\iter_0\trajectories_trajectory_config_4.jsonl --jobs 4
+    Finished `release` profile [optimized] target(s) in 0.15s
+     Running `backend\target\release\bot_arena.exe --config output\awr_training\iter_0\configs\trajectory_config_4.json --output output\awr_training\iter_0\trajectory_summary_trajectory_config_4.json --trajectories output\awr_training\iter_0\trajectories_trajectory_config_4.jsonl --jobs 4`
+[timing] match=0 actions=1270  inference=1267.7ms (75%)  game=208.4ms (12%)  trajectory=208.4ms (12%)
+[timing_detail] encode=0.009ms inference=1.008ms sample=0.001ms  (per-action, n=969)
+[timing] match=10 actions=1325  inference=1236.9ms (74%)  game=213.7ms (13%)  trajectory=210.3ms (13%)
+[timing_detail] encode=0.008ms inference=0.932ms sample=0.001ms  (per-action, n=999)
+[timing] match=20 actions=1385  inference=1290.3ms (74%)  game=244.9ms (14%)  trajectory=210.0ms (12%)
+[timing_detail] encode=0.009ms inference=0.924ms sample=0.001ms  (per-action, n=1079)
+[timing] match=30 actions=1465  inference=1391.0ms (72%)  game=284.0ms (15%)  trajectory=258.6ms (13%)
+[timing_detail] encode=0.009ms inference=0.932ms sample=0.001ms  (per-action, n=1125)
+[timing] match=40 actions=1360  inference=1304.9ms (73%)  game=263.1ms (15%)  trajectory=226.1ms (13%)
+[timing_detail] encode=0.009ms inference=0.942ms sample=0.001ms  (per-action, n=1065)
+  RUN: cargo run --release --manifest-path backend/Cargo.toml --bin bot_arena -- --config output\awr_training\iter_0\configs\trajectory_config_5.json --output output\awr_training\iter_0\trajectory_summary_trajectory_config_5.json --trajectories output\awr_training\iter_0\trajectories_trajectory_config_5.jsonl --jobs 4
+    Finished `release` profile [optimized] target(s) in 0.15s
      Running `backend\target\release\bot_arena.exe --config output\awr_training\iter_0\configs\trajectory_config_5.json --output output\awr_training\iter_0\trajectory_summary_trajectory_config_5.json --trajectories output\awr_training\iter_0\trajectories_trajectory_config_5.jsonl --jobs 4`
-[timing] match=0 actions=1448  inference=1462.2ms (76%)  game=242.5ms (13%)  trajectory=225.1ms (12%)
-[timing_detail] encode=0.009ms inference=1.016ms sample=0.001ms  (per-action, n=1113)
-[timing] match=10 actions=1482  inference=1549.7ms (75%)  game=274.8ms (13%)  trajectory=233.2ms (11%)
-[timing_detail] encode=0.009ms inference=1.039ms sample=0.001ms  (per-action, n=1143)
-[timing] match=20 actions=1405  inference=1492.5ms (74%)  game=297.8ms (15%)  trajectory=237.1ms (12%)
-[timing_detail] encode=0.009ms inference=1.029ms sample=0.001ms  (per-action, n=1106)
-[timing] match=30 actions=1490  inference=1590.0ms (73%)  game=328.6ms (15%)  trajectory=257.8ms (12%)
-[timing_detail] encode=0.009ms inference=1.051ms sample=0.002ms  (per-action, n=1168)
-[timing] match=40 actions=1338  inference=1310.5ms (72%)  game=272.7ms (15%)  trajectory=224.8ms (12%)
-[timing_detail] encode=0.009ms inference=0.966ms sample=0.001ms  (per-action, n=1037)
+[timing] match=0 actions=1448  inference=1439.6ms (76%)  game=234.2ms (12%)  trajectory=217.2ms (11%)
+[timing_detail] encode=0.009ms inference=1.001ms sample=0.001ms  (per-action, n=1113)
+[timing] match=10 actions=1482  inference=1443.4ms (76%)  game=255.4ms (13%)  trajectory=212.9ms (11%)
+[timing_detail] encode=0.009ms inference=0.970ms sample=0.001ms  (per-action, n=1143)
+[timing] match=20 actions=1405  inference=1453.0ms (74%)  game=282.0ms (14%)  trajectory=229.0ms (12%)
+[timing_detail] encode=0.009ms inference=1.019ms sample=0.001ms  (per-action, n=1106)
+[timing] match=30 actions=1490  inference=1599.2ms (74%)  game=314.5ms (15%)  trajectory=239.9ms (11%)
+[timing_detail] encode=0.009ms inference=1.058ms sample=0.002ms  (per-action, n=1168)
+[timing] match=40 actions=1338  inference=1911.8ms (72%)  game=406.0ms (15%)  trajectory=351.6ms (13%)
+[timing_detail] encode=0.011ms inference=1.406ms sample=0.002ms  (per-action, n=1037)
   RUN: cargo run --release --manifest-path backend/Cargo.toml --bin bot_arena -- --config output\awr_training\iter_0\configs\trajectory_config_6.json --output output\awr_training\iter_0\trajectory_summary_trajectory_config_6.json --trajectories output\awr_training\iter_0\trajectories_trajectory_config_6.jsonl --jobs 4
-    Finished `release` profile [optimized] target(s) in 0.18s
+    Finished `release` profile [optimized] target(s) in 0.17s
      Running `backend\target\release\bot_arena.exe --config output\awr_training\iter_0\configs\trajectory_config_6.json --output output\awr_training\iter_0\trajectory_summary_trajectory_config_6.json --trajectories output\awr_training\iter_0\trajectories_trajectory_config_6.jsonl --jobs 4`
-[timing] match=0 actions=1339  inference=1319.7ms (76%)  game=212.0ms (12%)  trajectory=201.7ms (12%)
-[timing_detail] encode=0.009ms inference=0.983ms sample=0.001ms  (per-action, n=1044)
-[timing] match=10 actions=1488  inference=1415.0ms (75%)  game=243.0ms (13%)  trajectory=235.9ms (12%)
-[timing_detail] encode=0.009ms inference=0.939ms sample=0.001ms  (per-action, n=1148)
-[timing] match=20 actions=1461  inference=1467.4ms (72%)  game=280.2ms (14%)  trajectory=293.6ms (14%)
-[timing_detail] encode=0.009ms inference=0.986ms sample=0.001ms  (per-action, n=1124)
-[timing] match=30 actions=1264  inference=1422.9ms (71%)  game=295.5ms (15%)  trajectory=279.0ms (14%)
-[timing_detail] encode=0.009ms inference=1.094ms sample=0.002ms  (per-action, n=988)
-[timing] match=40 actions=1421  inference=1681.8ms (70%)  game=358.4ms (15%)  trajectory=349.4ms (15%)
-[timing_detail] encode=0.010ms inference=1.166ms sample=0.002ms  (per-action, n=1081)
+[timing] match=0 actions=1339  inference=1490.2ms (76%)  game=245.4ms (13%)  trajectory=214.9ms (11%)
+[timing_detail] encode=0.009ms inference=1.118ms sample=0.002ms  (per-action, n=1044)
+[timing] match=10 actions=1488  inference=1592.5ms (75%)  game=276.2ms (13%)  trajectory=258.8ms (12%)
+[timing_detail] encode=0.009ms inference=1.052ms sample=0.002ms  (per-action, n=1148)
+[timing] match=20 actions=1461  inference=1725.3ms (72%)  game=333.1ms (14%)  trajectory=326.5ms (14%)
+[timing_detail] encode=0.010ms inference=1.160ms sample=0.002ms  (per-action, n=1124)
+[timing] match=30 actions=1264  inference=1536.9ms (71%)  game=324.8ms (15%)  trajectory=293.5ms (14%)
+[timing_detail] encode=0.009ms inference=1.194ms sample=0.002ms  (per-action, n=988)
+[timing] match=40 actions=1421  inference=1739.7ms (71%)  game=356.6ms (14%)  trajectory=368.1ms (15%)
+[timing_detail] encode=0.010ms inference=1.210ms sample=0.002ms  (per-action, n=1081)
   RUN: cargo run --release --manifest-path backend/Cargo.toml --bin bot_arena -- --config output\awr_training\iter_0\configs\trajectory_config_7.json --output output\awr_training\iter_0\trajectory_summary_trajectory_config_7.json --trajectories output\awr_training\iter_0\trajectories_trajectory_config_7.jsonl --jobs 4
-    Finished `release` profile [optimized] target(s) in 0.18s
+    Finished `release` profile [optimized] target(s) in 0.15s
      Running `backend\target\release\bot_arena.exe --config output\awr_training\iter_0\configs\trajectory_config_7.json --output output\awr_training\iter_0\trajectory_summary_trajectory_config_7.json --trajectories output\awr_training\iter_0\trajectories_trajectory_config_7.jsonl --jobs 4`
-[timing] match=0 actions=1382  inference=1576.2ms (74%)  game=258.6ms (12%)  trajectory=299.7ms (14%)
-[timing_detail] encode=0.009ms inference=1.152ms sample=0.002ms  (per-action, n=1070)
-[timing] match=10 actions=1139  inference=1341.7ms (74%)  game=232.0ms (13%)  trajectory=233.8ms (13%)
-[timing_detail] encode=0.009ms inference=1.165ms sample=0.002ms  (per-action, n=863)
-[timing] match=20 actions=1344  inference=1590.0ms (71%)  game=316.3ms (14%)  trajectory=330.0ms (15%)
-[timing_detail] encode=0.010ms inference=1.164ms sample=0.002ms  (per-action, n=1044)
-[timing] match=30 actions=1497  inference=1655.5ms (70%)  game=346.7ms (15%)  trajectory=364.1ms (15%)
-[timing_detail] encode=0.010ms inference=1.087ms sample=0.002ms  (per-action, n=1163)
-[timing] match=40 actions=1190  inference=1295.1ms (72%)  game=255.5ms (14%)  trajectory=259.9ms (14%)
-[timing_detail] encode=0.009ms inference=1.067ms sample=0.002ms  (per-action, n=903)
+[timing] match=0 actions=1382  inference=1567.2ms (74%)  game=251.5ms (12%)  trajectory=288.5ms (14%)
+[timing_detail] encode=0.009ms inference=1.134ms sample=0.001ms  (per-action, n=1070)
+[timing] match=10 actions=1139  inference=1280.5ms (76%)  game=211.8ms (12%)  trajectory=203.6ms (12%)
+[timing_detail] encode=0.009ms inference=1.105ms sample=0.002ms  (per-action, n=863)
+[timing] match=20 actions=1344  inference=1525.2ms (73%)  game=288.4ms (14%)  trajectory=282.6ms (13%)
+[timing_detail] encode=0.009ms inference=1.126ms sample=0.002ms  (per-action, n=1044)
+[timing] match=30 actions=1497  inference=1928.9ms (70%)  game=408.0ms (15%)  trajectory=425.8ms (15%)
+[timing_detail] encode=0.011ms inference=1.260ms sample=0.002ms  (per-action, n=1163)
+[timing] match=40 actions=1190  inference=1355.8ms (71%)  game=272.7ms (14%)  trajectory=278.1ms (15%)
+[timing_detail] encode=0.009ms inference=1.125ms sample=0.002ms  (per-action, n=903)
 [2/4] Pretraining value head...
   RUN: C:\Python314\python.exe backend/bot_trainer/v2/train_value.py --trajectories output\awr_training\iter_0\trajectories.jsonl --checkpoint backend\bot_trainer\v2\checkpoints\best.pt --output output\awr_training\iter_0\value_pretrained.pt --batch-size 512 --lr 5e-4 --early-stop-patience 5 --policy-id learner
-Value epoch 1/30: 100%|████████████████████████████████████████████████████████████████████████████████████████████████████████████████| 233/233 [00:27<00:00,  8.51it/s]
+Value epoch 1/30: 100%|████████████████████████████████████████████████████████████████████████████████████████████████████████████████| 233/233 [00:27<00:00,  8.43it/s]
 Epoch 1: value_mse=1.265493 value_ev=-0.0092 val_mse=1.167726 val_ev=0.0276 score_ce=0.000000
   best value checkpoint: epoch=1 selection_ev=0.0276
-Value epoch 2/30: 100%|████████████████████████████████████████████████████████████████████████████████████████████████████████████████| 233/233 [00:29<00:00,  7.87it/s]
+Value epoch 2/30: 100%|████████████████████████████████████████████████████████████████████████████████████████████████████████████████| 233/233 [00:29<00:00,  7.77it/s]
 Epoch 2: value_mse=1.223629 value_ev=0.0242 val_mse=1.163963 val_ev=0.0307 score_ce=0.000000
   best value checkpoint: epoch=2 selection_ev=0.0307
-Value epoch 3/30: 100%|████████████████████████████████████████████████████████████████████████████████████████████████████████████████| 233/233 [00:26<00:00,  8.84it/s]
+Value epoch 3/30: 100%|████████████████████████████████████████████████████████████████████████████████████████████████████████████████| 233/233 [00:27<00:00,  8.46it/s]
 Epoch 3: value_mse=1.215689 value_ev=0.0306 val_mse=1.168649 val_ev=0.0268 score_ce=0.000000
-Value epoch 4/30: 100%|████████████████████████████████████████████████████████████████████████████████████████████████████████████████| 233/233 [00:19<00:00, 11.84it/s]
+Value epoch 4/30: 100%|████████████████████████████████████████████████████████████████████████████████████████████████████████████████| 233/233 [00:30<00:00,  7.75it/s]
 Epoch 4: value_mse=1.208467 value_ev=0.0363 val_mse=1.154652 val_ev=0.0385 score_ce=0.000000
   best value checkpoint: epoch=4 selection_ev=0.0385
-Value epoch 5/30: 100%|████████████████████████████████████████████████████████████████████████████████████████████████████████████████| 233/233 [00:20<00:00, 11.35it/s]
+Value epoch 5/30: 100%|████████████████████████████████████████████████████████████████████████████████████████████████████████████████| 233/233 [00:33<00:00,  6.93it/s]
 Epoch 5: value_mse=1.201555 value_ev=0.0418 val_mse=1.155308 val_ev=0.0379 score_ce=0.000000
-Value epoch 6/30: 100%|████████████████████████████████████████████████████████████████████████████████████████████████████████████████| 233/233 [00:19<00:00, 11.78it/s]
+Value epoch 6/30: 100%|████████████████████████████████████████████████████████████████████████████████████████████████████████████████| 233/233 [00:28<00:00,  8.20it/s]
 Epoch 6: value_mse=1.196125 value_ev=0.0462 val_mse=1.162343 val_ev=0.0321 score_ce=0.000000
-Value epoch 7/30: 100%|████████████████████████████████████████████████████████████████████████████████████████████████████████████████| 233/233 [00:19<00:00, 11.78it/s]
+Value epoch 7/30: 100%|████████████████████████████████████████████████████████████████████████████████████████████████████████████████| 233/233 [00:27<00:00,  8.35it/s]
 Epoch 7: value_mse=1.191721 value_ev=0.0497 val_mse=1.160227 val_ev=0.0338 score_ce=0.000000
-Value epoch 8/30: 100%|████████████████████████████████████████████████████████████████████████████████████████████████████████████████| 233/233 [00:20<00:00, 11.51it/s]
+Value epoch 8/30: 100%|████████████████████████████████████████████████████████████████████████████████████████████████████████████████| 233/233 [00:28<00:00,  8.13it/s]
 Epoch 8: value_mse=1.185749 value_ev=0.0544 val_mse=1.163169 val_ev=0.0314 score_ce=0.000000
-Value epoch 9/30: 100%|████████████████████████████████████████████████████████████████████████████████████████████████████████████████| 233/233 [00:19<00:00, 11.81it/s]
+Value epoch 9/30: 100%|████████████████████████████████████████████████████████████████████████████████████████████████████████████████| 233/233 [00:26<00:00,  8.80it/s]
 Epoch 9: value_mse=1.180072 value_ev=0.0590 val_mse=1.161375 val_ev=0.0329 score_ce=0.000000
 Early stopping value pretrain at epoch 9; best_epoch=4 best_selection_ev=0.0385
 Saved value-pretrained checkpoint to output\awr_training\iter_0\value_pretrained.pt
 [3/4] Running AWR training...
-  RUN: C:\Python314\python.exe backend/bot_trainer/v2/train_awr.py --trajectories output\awr_training\iter_0\trajectories.jsonl --checkpoint output\awr_training\iter_0\value_pretrained.pt --output-dir output\awr_training\iter_0\awr_checkpoints --epochs 3 --value-finetune-epochs 3 --batch-size 512 --lr 3e-5 --temperature 1.0 --weight-clip 10.0 --adv-source value --sft-checkpoint backend\bot_trainer\v2\checkpoints\best.pt --policy-id learner
-AWR epoch 1/3: 100%|███████████████████████████████████████████████████████████████████████████████████████████████████████████████████| 233/233 [00:27<00:00,  8.59it/s]
-Epoch 1: policy_loss=0.493495 value_mse=1.190920 value_ev=0.0503 kl_loss=0.011961 val_mse=1.123106 val_ev=0.0647 fan_d=0.001082 fanv_d=0.000720 adv_mean=0.0000 adv_std=1.0000 adv_pos=0.5153 weight_mean=1.3361 weight_max=10.0000 active_weight=0.5153 samples=118901
-AWR epoch 2/3: 100%|███████████████████████████████████████████████████████████████████████████████████████████████████████████████████| 233/233 [00:25<00:00,  9.26it/s]
-Epoch 2: policy_loss=0.445993 value_mse=1.150037 value_ev=0.0829 kl_loss=0.014397 val_mse=1.094468 val_ev=0.0886 fan_d=0.001198 fanv_d=0.000793 adv_mean=0.0000 adv_std=1.0000 adv_pos=0.5153 weight_mean=1.3361 weight_max=10.0000 active_weight=0.5153 samples=118901
-AWR epoch 3/3: 100%|███████████████████████████████████████████████████████████████████████████████████████████████████████████████████| 233/233 [00:23<00:00,  9.88it/s]
-Epoch 3: policy_loss=0.433632 value_mse=1.112402 value_ev=0.1129 kl_loss=0.016678 val_mse=1.070266 val_ev=0.1087 fan_d=0.001315 fanv_d=0.000860 adv_mean=0.0000 adv_std=1.0000 adv_pos=0.5153 weight_mean=1.3361 weight_max=10.0000 active_weight=0.5153 samples=118901
-Value fine-tune: freezing policy, training value head...
-  value_ft epoch 1: mse=1.099114 ev=0.1235
-  value_ft epoch 2: mse=1.090820 ev=0.1301
-  value_ft epoch 3: mse=1.085339 ev=0.1345
-Saved to output\awr_training\iter_0\awr_checkpoints (best value_ev=0.1345)
+  RUN: C:\Python314\python.exe backend/bot_trainer/v2/train_awr.py --trajectories output\awr_training\iter_0\trajectories.jsonl --checkpoint output\awr_training\iter_0\value_pretrained.pt --output-dir output\awr_training\iter_0\awr_checkpoints --epochs 3 --value-finetune-epochs 0 --batch-size 512 --lr 1e-05 --temperature 1.0 --weight-clip 10.0 --adv-norm batch --adv-source value --value-loss-coef 0.0 --kl-coef 0.03 --sft-checkpoint backend/bot_trainer/v2/checkpoints/best.pt --risk-value-checkpoint backend/bot_trainer/v2/checkpoints/best.pt --policy-id learner
+Export value_for_risk head source: backend\bot_trainer\v2\checkpoints\best.pt
+AWR epoch 1/3: 100%|███████████████████████████████████████████████████████████████████████████████████████████████████████████████████| 233/233 [00:26<00:00,  8.80it/s]
+Epoch 1: policy_loss=0.524961 value_mse=1.201911 value_ev=0.0415 kl_loss=0.010162 val_mse=1.152350 val_ev=0.0404 fan_d=0.001036 fanv_d=0.000697 adv_mean=-0.0000 adv_std=1.0000 adv_pos=0.5031 weight_mean=1.3179 weight_max=10.0000 active_weight=0.5031 samples=118901
+AWR epoch 2/3: 100%|███████████████████████████████████████████████████████████████████████████████████████████████████████████████████| 233/233 [00:24<00:00,  9.49it/s]
+Epoch 2: policy_loss=0.487618 value_mse=1.201467 value_ev=0.0419 kl_loss=0.010855 val_mse=1.152592 val_ev=0.0402 fan_d=0.001059 fanv_d=0.000720 adv_mean=-0.0000 adv_std=1.0000 adv_pos=0.5030 weight_mean=1.3173 weight_max=10.0000 active_weight=0.5030 samples=118901
+AWR epoch 3/3: 100%|███████████████████████████████████████████████████████████████████████████████████████████████████████████████████| 233/233 [00:28<00:00,  8.12it/s]
+Epoch 3: policy_loss=0.460509 value_mse=1.203735 value_ev=0.0401 kl_loss=0.011153 val_mse=1.152839 val_ev=0.0400 fan_d=0.001058 fanv_d=0.000723 adv_mean=0.0000 adv_std=1.0000 adv_pos=0.5033 weight_mean=1.3180 weight_max=10.0000 active_weight=0.5033 samples=118901
+Saved to output\awr_training\iter_0\awr_checkpoints (best value_ev=0.0404)
 [4/4] Exporting AWR ONNX...
   RUN: C:\Python314\python.exe backend/bot_trainer/v2/export_onnx.py --checkpoint output\awr_training\iter_0\awr_checkpoints\awr_best.pt --output output\awr_training\iter_0\awr.onnx
 [torch.onnx] Obtain model graph for `OnnxWrapper([...]` with `torch.export.export(..., strict=False)`...
-W0623 15:51:39.541000 31872 site-packages\torch\utils\flop_counter.py:29] triton not found; flop counting will not work for triton kernels
+W0623 18:36:12.562000 1784 site-packages\torch\utils\flop_counter.py:29] triton not found; flop counting will not work for triton kernels
 [torch.onnx] Obtain model graph for `OnnxWrapper([...]` with `torch.export.export(..., strict=False)`... ✅
 [torch.onnx] Run decompositions...
 [torch.onnx] Run decompositions... ✅
@@ -163,77 +161,149 @@ Skipping constant folding for op Split with multiple outputs.
 [torch.onnx] Optimize the ONNX graph... ✅
 exported output\awr_training\iter_0\awr.onnx
 Evaluating candidate vs multiple opponents...
-  RUN: C:\Python314\python.exe backend/bot_trainer/v2/league_config.py --pool output\awr_training\working_pool.json --output-dir output\awr_training\iter_0\matrix_config --matches 20 --seed 20260625 --mode matrix --candidate-onnx output\awr_training\iter_0\awr.onnx --baseline-onnx backend/assets/sft/sft.onnx
+  RUN: C:\Python314\python.exe backend/bot_trainer/v2/league_config.py --pool output\awr_training\working_pool.json --output-dir output\awr_training\iter_0\matrix_config --matches 80 --seed 20260625 --mode matrix --candidate-onnx output\awr_training\iter_0\awr.onnx --baseline-onnx backend/assets/sft/sft.onnx
   RUN: cargo run --release --manifest-path backend/Cargo.toml --bin bot_arena -- --config output\awr_training\iter_0\matrix_config\matrix_config_0.json --output output\awr_training\iter_0\matrix_result_matrix_config_0.jsonl
-    Finished `release` profile [optimized] target(s) in 0.17s
+    Finished `release` profile [optimized] target(s) in 0.18s
      Running `backend\target\release\bot_arena.exe --config output\awr_training\iter_0\matrix_config\matrix_config_0.json --output output\awr_training\iter_0\matrix_result_matrix_config_0.jsonl`
-[timing] match=0 actions=1254  inference=842.3ms (85%)  game=144.1ms (15%)  trajectory=0.1ms (0%)
-[timing_detail] encode=0.008ms inference=0.661ms sample=0.002ms  (per-action, n=957)
-[timing] match=10 actions=1351  inference=912.7ms (85%)  game=155.3ms (15%)  trajectory=0.1ms (0%)
-[timing_detail] encode=0.007ms inference=0.669ms sample=0.002ms  (per-action, n=1024)
-[timing] match=0 actions=1406  inference=1038.9ms (85%)  game=180.4ms (15%)  trajectory=0.1ms (0%)
-[timing_detail] encode=0.008ms inference=0.726ms sample=0.002ms  (per-action, n=1083)
-[timing] match=10 actions=1334  inference=1004.4ms (85%)  game=173.2ms (15%)  trajectory=0.1ms (0%)
-[timing_detail] encode=0.007ms inference=0.746ms sample=0.002ms  (per-action, n=1018)
+[timing] match=0 actions=1254  inference=847.9ms (86%)  game=142.3ms (14%)  trajectory=0.1ms (0%)
+[timing_detail] encode=0.007ms inference=0.666ms sample=0.002ms  (per-action, n=957)
+[timing] match=10 actions=1351  inference=1289.0ms (86%)  game=207.3ms (14%)  trajectory=0.1ms (0%)
+[timing_detail] encode=0.009ms inference=0.949ms sample=0.003ms  (per-action, n=1024)
+[timing] match=20 actions=959  inference=1009.0ms (85%)  game=174.7ms (15%)  trajectory=0.1ms (0%)
+[timing_detail] encode=0.009ms inference=1.040ms sample=0.003ms  (per-action, n=739)
+[timing] match=30 actions=1325  inference=1400.6ms (84%)  game=259.7ms (16%)  trajectory=0.1ms (0%)
+[timing_detail] encode=0.009ms inference=1.043ms sample=0.003ms  (per-action, n=1022)
+[timing] match=40 actions=1486  inference=1783.7ms (84%)  game=345.7ms (16%)  trajectory=0.2ms (0%)
+[timing_detail] encode=0.011ms inference=1.189ms sample=0.003ms  (per-action, n=1152)
+[timing] match=50 actions=1310  inference=1402.3ms (84%)  game=274.3ms (16%)  trajectory=0.1ms (0%)
+[timing_detail] encode=0.009ms inference=1.049ms sample=0.003ms  (per-action, n=1001)
+[timing] match=60 actions=1292  inference=995.0ms (83%)  game=206.2ms (17%)  trajectory=0.1ms (0%)
+[timing_detail] encode=0.008ms inference=0.749ms sample=0.002ms  (per-action, n=983)
+[timing] match=70 actions=1289  inference=924.7ms (83%)  game=195.3ms (17%)  trajectory=0.1ms (0%)
+[timing_detail] encode=0.008ms inference=0.705ms sample=0.002ms  (per-action, n=1006)
+[timing] match=0 actions=1214  inference=897.3ms (84%)  game=169.6ms (16%)  trajectory=0.1ms (0%)
+[timing_detail] encode=0.007ms inference=0.730ms sample=0.002ms  (per-action, n=934)
+[timing] match=10 actions=1465  inference=1082.8ms (84%)  game=208.2ms (16%)  trajectory=0.1ms (0%)
+[timing_detail] encode=0.008ms inference=0.725ms sample=0.002ms  (per-action, n=1123)
+[timing] match=20 actions=1321  inference=953.3ms (84%)  game=182.6ms (16%)  trajectory=0.1ms (0%)
+[timing_detail] encode=0.007ms inference=0.709ms sample=0.002ms  (per-action, n=1014)
+[timing] match=30 actions=1250  inference=890.0ms (84%)  game=173.7ms (16%)  trajectory=0.1ms (0%)
+[timing_detail] encode=0.007ms inference=0.703ms sample=0.002ms  (per-action, n=955)
+[timing] match=40 actions=1415  inference=1038.5ms (84%)  game=199.5ms (16%)  trajectory=0.1ms (0%)
+[timing_detail] encode=0.008ms inference=0.722ms sample=0.002ms  (per-action, n=1091)
+[timing] match=50 actions=1355  inference=1004.8ms (84%)  game=192.3ms (16%)  trajectory=0.1ms (0%)
+[timing_detail] encode=0.008ms inference=0.731ms sample=0.002ms  (per-action, n=1027)
+[timing] match=60 actions=1309  inference=964.0ms (84%)  game=184.0ms (16%)  trajectory=0.1ms (0%)
+[timing_detail] encode=0.007ms inference=0.717ms sample=0.002ms  (per-action, n=1005)
+[timing] match=70 actions=1415  inference=1109.7ms (84%)  game=207.4ms (16%)  trajectory=0.1ms (0%)
+[timing_detail] encode=0.008ms inference=0.771ms sample=0.002ms  (per-action, n=1097)
   RUN: C:\Python314\python.exe backend/bot_trainer/v2/arena_summary.py --input output\awr_training\iter_0\matrix_result_matrix_config_0.jsonl --output output\awr_training\iter_0\matrix_summary_matrix_config_0.json
-Arena summary: matches=40 completed=40
-  awr_candidate_neural: avg_score_delta=-37.3000 win_rate=3.0500 deal_in_rate=2.4000 avg_first_tenpai_turn=11.90 final_tenpai_rate=0.5500 avg_latency_ms_per_decision=0.14 latency_ms_p95=0.16 model_loaded_seats=20 neural_action_count=6210
-  baseline_neural: avg_score_delta=-65.7000 win_rate=2.5500 deal_in_rate=2.8000 avg_first_tenpai_turn=12.50 final_tenpai_rate=0.5500 avg_latency_ms_per_decision=0.06 latency_ms_p95=0.08 model_loaded_seats=20 neural_action_count=6277
-  sft_cold-opponent-1: avg_score_delta=-5.4000 win_rate=3.3250 deal_in_rate=2.4750 avg_first_tenpai_turn=14.12 final_tenpai_rate=0.6000 avg_latency_ms_per_decision=0.07 latency_ms_p95=0.10 model_loaded_seats=40 neural_action_count=12472
-  sft_cold-opponent-2: avg_score_delta=25.3750 win_rate=3.4000 deal_in_rate=2.7500 avg_first_tenpai_turn=14.45 final_tenpai_rate=0.5000 avg_latency_ms_per_decision=0.06 latency_ms_p95=0.09 model_loaded_seats=40 neural_action_count=12505
-  sft_cold-opponent-3: avg_score_delta=31.5250 win_rate=3.5750 deal_in_rate=2.4500 avg_first_tenpai_turn=16.73 final_tenpai_rate=0.6500 avg_latency_ms_per_decision=0.06 latency_ms_p95=0.09 model_loaded_seats=40 neural_action_count=12428
+Arena summary: matches=160 completed=160
+  awr_candidate_neural: avg_score_delta=-59.5375 win_rate=2.6750 deal_in_rate=2.5875 avg_first_tenpai_turn=12.47 final_tenpai_rate=0.6250 avg_latency_ms_per_decision=0.13 latency_ms_p95=0.21 model_loaded_seats=80 neural_action_count=25034
+  baseline_neural: avg_score_delta=-49.1125 win_rate=2.8250 deal_in_rate=2.5750 avg_first_tenpai_turn=12.85 final_tenpai_rate=0.6125 avg_latency_ms_per_decision=0.37 latency_ms_p95=0.61 model_loaded_seats=80 neural_action_count=24665
+  sft_cold-opponent-1: avg_score_delta=10.7750 win_rate=3.3750 deal_in_rate=2.3000 avg_first_tenpai_turn=13.47 final_tenpai_rate=0.6125 avg_latency_ms_per_decision=0.21 latency_ms_p95=0.56 model_loaded_seats=160 neural_action_count=49616
+  sft_cold-opponent-2: avg_score_delta=18.7688 win_rate=3.3438 deal_in_rate=2.6063 avg_first_tenpai_turn=15.21 final_tenpai_rate=0.5000 avg_latency_ms_per_decision=0.21 latency_ms_p95=0.57 model_loaded_seats=160 neural_action_count=49592
+  sft_cold-opponent-3: avg_score_delta=24.7812 win_rate=3.4937 deal_in_rate=2.5625 avg_first_tenpai_turn=13.77 final_tenpai_rate=0.6000 avg_latency_ms_per_decision=0.22 latency_ms_p95=0.55 model_loaded_seats=160 neural_action_count=49578
 Subjects:
-  awr_candidate_neural: matches=20 completed=20 avg_final_score=-37.3000 avg_deal_in_count=2.4000 avg_win_count=3.0500
-  baseline_neural: matches=20 completed=20 avg_final_score=-65.7000 avg_deal_in_count=2.8000 avg_win_count=2.5500
+  awr_candidate_neural: matches=80 completed=80 avg_final_score=-59.5375 avg_deal_in_count=2.5875 avg_win_count=2.6750
+  baseline_neural: matches=80 completed=80 avg_final_score=-49.1125 avg_deal_in_count=2.5750 avg_win_count=2.8250
   RUN: cargo run --release --manifest-path backend/Cargo.toml --bin bot_arena -- --config output\awr_training\iter_0\matrix_config\matrix_config_1.json --output output\awr_training\iter_0\matrix_result_matrix_config_1.jsonl
-    Finished `release` profile [optimized] target(s) in 0.13s
+    Finished `release` profile [optimized] target(s) in 0.17s
      Running `backend\target\release\bot_arena.exe --config output\awr_training\iter_0\matrix_config\matrix_config_1.json --output output\awr_training\iter_0\matrix_result_matrix_config_1.jsonl`
-[timing] match=0 actions=1371  inference=929.4ms (85%)  game=160.8ms (15%)  trajectory=0.1ms (0%)
-[timing_detail] encode=0.008ms inference=0.668ms sample=0.002ms  (per-action, n=1061)
-[timing] match=10 actions=1311  inference=894.5ms (86%)  game=151.2ms (14%)  trajectory=0.1ms (0%)
-[timing_detail] encode=0.008ms inference=0.678ms sample=0.002ms  (per-action, n=1018)
-[timing] match=0 actions=392  inference=291.2ms (85%)  game=52.1ms (15%)  trajectory=0.0ms (0%)
-[timing_detail] encode=0.007ms inference=0.730ms sample=0.002ms  (per-action, n=316)
-[timing] match=10 actions=1367  inference=1013.8ms (85%)  game=181.2ms (15%)  trajectory=0.1ms (0%)
-[timing_detail] encode=0.008ms inference=0.730ms sample=0.002ms  (per-action, n=1059)
+[timing] match=0 actions=1371  inference=974.1ms (86%)  game=162.6ms (14%)  trajectory=0.1ms (0%)
+[timing_detail] encode=0.008ms inference=0.696ms sample=0.002ms  (per-action, n=1061)
+[timing] match=10 actions=1311  inference=913.0ms (86%)  game=151.9ms (14%)  trajectory=0.1ms (0%)
+[timing_detail] encode=0.007ms inference=0.688ms sample=0.002ms  (per-action, n=1018)
+[timing] match=20 actions=1316  inference=932.9ms (84%)  game=178.3ms (16%)  trajectory=0.1ms (0%)
+[timing_detail] encode=0.008ms inference=0.700ms sample=0.002ms  (per-action, n=1007)
+[timing] match=30 actions=1401  inference=995.1ms (84%)  game=192.5ms (16%)  trajectory=0.1ms (0%)
+[timing_detail] encode=0.008ms inference=0.697ms sample=0.002ms  (per-action, n=1064)
+[timing] match=40 actions=1206  inference=858.0ms (83%)  game=180.7ms (17%)  trajectory=0.1ms (0%)
+[timing_detail] encode=0.007ms inference=0.696ms sample=0.002ms  (per-action, n=923)
+[timing] match=50 actions=1445  inference=1570.2ms (83%)  game=324.5ms (17%)  trajectory=0.2ms (0%)
+[timing_detail] encode=0.010ms inference=1.069ms sample=0.003ms  (per-action, n=1114)
+[timing] match=60 actions=1277  inference=1358.8ms (83%)  game=284.9ms (17%)  trajectory=0.1ms (0%)
+[timing_detail] encode=0.010ms inference=1.044ms sample=0.003ms  (per-action, n=988)
+[timing] match=70 actions=1430  inference=1410.2ms (82%)  game=301.0ms (18%)  trajectory=0.1ms (0%)
+[timing_detail] encode=0.009ms inference=0.965ms sample=0.003ms  (per-action, n=1107)
+[timing] match=0 actions=1355  inference=1037.6ms (83%)  game=212.9ms (17%)  trajectory=0.1ms (0%)
+[timing_detail] encode=0.008ms inference=0.748ms sample=0.002ms  (per-action, n=1040)
+[timing] match=10 actions=1258  inference=968.6ms (84%)  game=185.6ms (16%)  trajectory=0.1ms (0%)
+[timing_detail] encode=0.007ms inference=0.756ms sample=0.002ms  (per-action, n=963)
+[timing] match=20 actions=1538  inference=1178.3ms (83%)  game=233.2ms (17%)  trajectory=0.1ms (0%)
+[timing_detail] encode=0.008ms inference=0.753ms sample=0.002ms  (per-action, n=1179)
+[timing] match=30 actions=1381  inference=1065.5ms (84%)  game=206.9ms (16%)  trajectory=0.1ms (0%)
+[timing_detail] encode=0.007ms inference=0.755ms sample=0.002ms  (per-action, n=1060)
+[timing] match=40 actions=1266  inference=984.2ms (84%)  game=187.3ms (16%)  trajectory=0.1ms (0%)
+[timing_detail] encode=0.007ms inference=0.758ms sample=0.003ms  (per-action, n=967)
+[timing] match=50 actions=1258  inference=954.9ms (84%)  game=182.6ms (16%)  trajectory=0.1ms (0%)
+[timing_detail] encode=0.007ms inference=0.746ms sample=0.002ms  (per-action, n=967)
+[timing] match=60 actions=1424  inference=1082.5ms (84%)  game=210.2ms (16%)  trajectory=0.1ms (0%)
+[timing_detail] encode=0.008ms inference=0.743ms sample=0.002ms  (per-action, n=1097)
+[timing] match=70 actions=1343  inference=1033.6ms (84%)  game=201.7ms (16%)  trajectory=0.1ms (0%)
+[timing_detail] encode=0.008ms inference=0.750ms sample=0.002ms  (per-action, n=1048)
   RUN: C:\Python314\python.exe backend/bot_trainer/v2/arena_summary.py --input output\awr_training\iter_0\matrix_result_matrix_config_1.jsonl --output output\awr_training\iter_0\matrix_summary_matrix_config_1.json
-Arena summary: matches=40 completed=40
-  awr_candidate_neural: avg_score_delta=2.3500 win_rate=3.6500 deal_in_rate=1.8000 avg_first_tenpai_turn=12.65 final_tenpai_rate=0.7000 avg_latency_ms_per_decision=0.13 latency_ms_p95=0.16 model_loaded_seats=20 neural_action_count=6355
-  baseline_neural: avg_score_delta=7.3500 win_rate=3.5000 deal_in_rate=1.9500 avg_first_tenpai_turn=12.50 final_tenpai_rate=0.6000 avg_latency_ms_per_decision=0.05 latency_ms_p95=0.08 model_loaded_seats=20 neural_action_count=6665
-  sft_warm-opponent-1: avg_score_delta=7.8250 win_rate=3.1500 deal_in_rate=2.3750 avg_first_tenpai_turn=17.82 final_tenpai_rate=0.4250 avg_latency_ms_per_decision=0.06 latency_ms_p95=0.09 model_loaded_seats=40 neural_action_count=12850
-  sft_warm-opponent-2: avg_score_delta=-0.3500 win_rate=2.8250 deal_in_rate=2.6000 avg_first_tenpai_turn=19.50 final_tenpai_rate=0.4250 avg_latency_ms_per_decision=0.06 latency_ms_p95=0.09 model_loaded_seats=40 neural_action_count=12804
-  sft_warm-opponent-3: avg_score_delta=-12.3250 win_rate=2.7000 deal_in_rate=2.7000 avg_first_tenpai_turn=19.68 final_tenpai_rate=0.3500 avg_latency_ms_per_decision=0.06 latency_ms_p95=0.08 model_loaded_seats=40 neural_action_count=12813
+Arena summary: matches=160 completed=160
+  awr_candidate_neural: avg_score_delta=-1.7250 win_rate=3.5375 deal_in_rate=2.3875 avg_first_tenpai_turn=13.25 final_tenpai_rate=0.6625 avg_latency_ms_per_decision=0.15 latency_ms_p95=0.19 model_loaded_seats=80 neural_action_count=26363
+  baseline_neural: avg_score_delta=-8.8375 win_rate=3.4000 deal_in_rate=2.3500 avg_first_tenpai_turn=13.29 final_tenpai_rate=0.7000 avg_latency_ms_per_decision=0.20 latency_ms_p95=0.50 model_loaded_seats=80 neural_action_count=26600
+  sft_warm-opponent-1: avg_score_delta=6.3688 win_rate=3.0938 deal_in_rate=2.5125 avg_first_tenpai_turn=18.49 final_tenpai_rate=0.5312 avg_latency_ms_per_decision=0.14 latency_ms_p95=0.48 model_loaded_seats=160 neural_action_count=52304
+  sft_warm-opponent-2: avg_score_delta=13.5188 win_rate=3.0812 deal_in_rate=2.3875 avg_first_tenpai_turn=16.66 final_tenpai_rate=0.5312 avg_latency_ms_per_decision=0.14 latency_ms_p95=0.47 model_loaded_seats=160 neural_action_count=52327
+  sft_warm-opponent-3: avg_score_delta=-14.6062 win_rate=2.7437 deal_in_rate=2.7375 avg_first_tenpai_turn=16.78 final_tenpai_rate=0.5000 avg_latency_ms_per_decision=0.13 latency_ms_p95=0.46 model_loaded_seats=160 neural_action_count=52108
 Subjects:
-  awr_candidate_neural: matches=20 completed=20 avg_final_score=2.3500 avg_deal_in_count=1.8000 avg_win_count=3.6500
-  baseline_neural: matches=20 completed=20 avg_final_score=7.3500 avg_deal_in_count=1.9500 avg_win_count=3.5000
+  awr_candidate_neural: matches=80 completed=80 avg_final_score=-1.7250 avg_deal_in_count=2.3875 avg_win_count=3.5375
+  baseline_neural: matches=80 completed=80 avg_final_score=-8.8375 avg_deal_in_count=2.3500 avg_win_count=3.4000
   RUN: cargo run --release --manifest-path backend/Cargo.toml --bin bot_arena -- --config output\awr_training\iter_0\matrix_config\matrix_config_2.json --output output\awr_training\iter_0\matrix_result_matrix_config_2.jsonl
     Finished `release` profile [optimized] target(s) in 0.14s
      Running `backend\target\release\bot_arena.exe --config output\awr_training\iter_0\matrix_config\matrix_config_2.json --output output\awr_training\iter_0\matrix_result_matrix_config_2.jsonl`
-[timing] match=0 actions=1399  inference=985.8ms (85%)  game=168.1ms (15%)  trajectory=0.1ms (0%)
-[timing_detail] encode=0.008ms inference=0.696ms sample=0.002ms  (per-action, n=1091)
-[timing] match=10 actions=1425  inference=1002.5ms (86%)  game=168.7ms (14%)  trajectory=0.2ms (0%)
-[timing_detail] encode=0.008ms inference=0.693ms sample=0.002ms  (per-action, n=1106)
-[timing] match=0 actions=1343  inference=1007.7ms (86%)  game=157.3ms (14%)  trajectory=0.1ms (0%)
-[timing_detail] encode=0.008ms inference=0.743ms sample=0.002ms  (per-action, n=1043)
-[timing] match=10 actions=1527  inference=1159.6ms (85%)  game=205.5ms (15%)  trajectory=0.1ms (0%)
-[timing_detail] encode=0.008ms inference=0.750ms sample=0.002ms  (per-action, n=1185)
+[timing] match=0 actions=1399  inference=952.6ms (85%)  game=164.5ms (15%)  trajectory=0.1ms (0%)
+[timing_detail] encode=0.008ms inference=0.671ms sample=0.002ms  (per-action, n=1091)
+[timing] match=10 actions=1425  inference=951.0ms (85%)  game=165.0ms (15%)  trajectory=0.1ms (0%)
+[timing_detail] encode=0.008ms inference=0.658ms sample=0.002ms  (per-action, n=1106)
+[timing] match=20 actions=1663  inference=1102.7ms (85%)  game=194.5ms (15%)  trajectory=0.1ms (0%)
+[timing_detail] encode=0.008ms inference=0.651ms sample=0.002ms  (per-action, n=1286)
+[timing] match=30 actions=1549  inference=1177.4ms (85%)  game=213.1ms (15%)  trajectory=0.1ms (0%)
+[timing_detail] encode=0.008ms inference=0.753ms sample=0.003ms  (per-action, n=1191)
+[timing] match=40 actions=1364  inference=949.9ms (83%)  game=187.9ms (17%)  trajectory=0.1ms (0%)
+[timing_detail] encode=0.008ms inference=0.687ms sample=0.002ms  (per-action, n=1067)
+[timing] match=50 actions=1636  inference=1136.0ms (83%)  game=225.6ms (17%)  trajectory=0.1ms (0%)
+[timing_detail] encode=0.008ms inference=0.678ms sample=0.002ms  (per-action, n=1264)
+[timing] match=60 actions=1698  inference=1179.6ms (82%)  game=250.4ms (18%)  trajectory=0.1ms (0%)
+[timing_detail] encode=0.008ms inference=0.683ms sample=0.002ms  (per-action, n=1325)
+[timing] match=70 actions=1512  inference=1056.2ms (83%)  game=215.6ms (17%)  trajectory=0.1ms (0%)
+[timing_detail] encode=0.008ms inference=0.678ms sample=0.002ms  (per-action, n=1182)
+[timing] match=0 actions=1297  inference=982.7ms (84%)  game=184.5ms (16%)  trajectory=0.1ms (0%)
+[timing_detail] encode=0.008ms inference=0.741ms sample=0.002ms  (per-action, n=996)
+[timing] match=10 actions=1479  inference=1118.5ms (84%)  game=213.4ms (16%)  trajectory=0.1ms (0%)
+[timing_detail] encode=0.008ms inference=0.747ms sample=0.002ms  (per-action, n=1150)
+[timing] match=20 actions=1662  inference=1241.4ms (84%)  game=241.6ms (16%)  trajectory=0.1ms (0%)
+[timing_detail] encode=0.008ms inference=0.729ms sample=0.002ms  (per-action, n=1311)
+[timing] match=30 actions=1328  inference=1008.6ms (84%)  game=189.5ms (16%)  trajectory=0.1ms (0%)
+[timing_detail] encode=0.008ms inference=0.749ms sample=0.002ms  (per-action, n=1027)
+[timing] match=40 actions=1474  inference=1100.9ms (84%)  game=209.9ms (16%)  trajectory=0.1ms (0%)
+[timing_detail] encode=0.008ms inference=0.735ms sample=0.002ms  (per-action, n=1144)
+[timing] match=50 actions=1382  inference=1030.5ms (84%)  game=195.6ms (16%)  trajectory=0.1ms (0%)
+[timing_detail] encode=0.007ms inference=0.733ms sample=0.002ms  (per-action, n=1056)
+[timing] match=60 actions=1548  inference=1180.4ms (84%)  game=227.4ms (16%)  trajectory=0.1ms (0%)
+[timing_detail] encode=0.008ms inference=0.746ms sample=0.002ms  (per-action, n=1216)
+[timing] match=70 actions=1476  inference=1117.3ms (84%)  game=215.3ms (16%)  trajectory=0.1ms (0%)
+[timing_detail] encode=0.008ms inference=0.738ms sample=0.002ms  (per-action, n=1154)
   RUN: C:\Python314\python.exe backend/bot_trainer/v2/arena_summary.py --input output\awr_training\iter_0\matrix_result_matrix_config_2.jsonl --output output\awr_training\iter_0\matrix_summary_matrix_config_2.json
-Arena summary: matches=40 completed=40
-  awr_candidate_neural: avg_score_delta=50.9000 win_rate=3.7500 deal_in_rate=1.7000 avg_first_tenpai_turn=11.55 final_tenpai_rate=0.6000 avg_latency_ms_per_decision=0.14 latency_ms_p95=0.18 model_loaded_seats=20 neural_action_count=7319
-  baseline_neural: avg_score_delta=95.7000 win_rate=4.4500 deal_in_rate=1.0500 avg_first_tenpai_turn=12.40 final_tenpai_rate=0.7500 avg_latency_ms_per_decision=0.06 latency_ms_p95=0.08 model_loaded_seats=20 neural_action_count=7143
-  sft_hot-opponent-1: avg_score_delta=-17.0750 win_rate=2.1000 deal_in_rate=2.7750 avg_first_tenpai_turn=22.40 final_tenpai_rate=0.3500 avg_latency_ms_per_decision=0.07 latency_ms_p95=0.10 model_loaded_seats=40 neural_action_count=14144
-  sft_hot-opponent-2: avg_score_delta=-28.5500 win_rate=1.8250 deal_in_rate=2.2750 avg_first_tenpai_turn=19.05 final_tenpai_rate=0.4000 avg_latency_ms_per_decision=0.06 latency_ms_p95=0.09 model_loaded_seats=40 neural_action_count=14100
-  sft_hot-opponent-3: avg_score_delta=-27.6750 win_rate=1.9250 deal_in_rate=2.2500 avg_first_tenpai_turn=19.98 final_tenpai_rate=0.3000 avg_latency_ms_per_decision=0.06 latency_ms_p95=0.09 model_loaded_seats=40 neural_action_count=14114
+Arena summary: matches=160 completed=160
+  awr_candidate_neural: avg_score_delta=84.8500 win_rate=4.5250 deal_in_rate=1.5000 avg_first_tenpai_turn=12.16 final_tenpai_rate=0.6750 avg_latency_ms_per_decision=0.14 latency_ms_p95=0.16 model_loaded_seats=80 neural_action_count=29069
+  baseline_neural: avg_score_delta=73.2250 win_rate=4.0000 deal_in_rate=1.3750 avg_first_tenpai_turn=12.00 final_tenpai_rate=0.7875 avg_latency_ms_per_decision=0.07 latency_ms_p95=0.09 model_loaded_seats=80 neural_action_count=29298
+  sft_hot-opponent-1: avg_score_delta=-18.5562 win_rate=2.0812 deal_in_rate=2.4188 avg_first_tenpai_turn=19.98 final_tenpai_rate=0.3563 avg_latency_ms_per_decision=0.07 latency_ms_p95=0.10 model_loaded_seats=160 neural_action_count=56717
+  sft_hot-opponent-2: avg_score_delta=-33.5250 win_rate=1.8438 deal_in_rate=2.6063 avg_first_tenpai_turn=23.23 final_tenpai_rate=0.3625 avg_latency_ms_per_decision=0.07 latency_ms_p95=0.09 model_loaded_seats=160 neural_action_count=56670
+  sft_hot-opponent-3: avg_score_delta=-26.9563 win_rate=1.8938 deal_in_rate=2.3687 avg_first_tenpai_turn=25.68 final_tenpai_rate=0.3187 avg_latency_ms_per_decision=0.07 latency_ms_p95=0.10 model_loaded_seats=160 neural_action_count=56434
 Subjects:
-  awr_candidate_neural: matches=20 completed=20 avg_final_score=50.9000 avg_deal_in_count=1.7000 avg_win_count=3.7500
-  baseline_neural: matches=20 completed=20 avg_final_score=95.7000 avg_deal_in_count=1.0500 avg_win_count=4.4500
+  awr_candidate_neural: matches=80 completed=80 avg_final_score=84.8500 avg_deal_in_count=1.5000 avg_win_count=4.5250
+  baseline_neural: matches=80 completed=80 avg_final_score=73.2250 avg_deal_in_count=1.3750 avg_win_count=4.0000
   RUN: C:\Python314\python.exe backend/bot_trainer/v2/candidate_gate.py --summary output\awr_training\iter_0\matrix_summary_matrix_config_0.json output\awr_training\iter_0\matrix_summary_matrix_config_1.json output\awr_training\iter_0\matrix_summary_matrix_config_2.json --pool output\awr_training\working_pool.json --output output\awr_training\iter_0\gate_result.json
 {
   "accepted": false,
   "weighted_metrics": {
-    "avg_score_delta": -7.133333333333333,
-    "win_rate": -0.016666666666666757,
-    "deal_in_rate": -0.023333333333333428
+    "avg_score_delta": 2.770833333333332,
+    "win_rate": 0.1708333333333334,
+    "deal_in_rate": -0.048333333333333416
   },
   "per_opponent": [
     {
@@ -242,9 +312,33 @@ Subjects:
       "result": {
         "accepted": false,
         "failures": [
+          "avg_score_delta",
+          "win_rate",
+          "deal_in_rate",
           "paired_confidence"
         ],
         "failure_details": [
+          {
+            "metric": "avg_score_delta",
+            "baseline": -49.1125,
+            "candidate": -59.5375,
+            "threshold": -49.1125,
+            "margin": -10.425000000000004
+          },
+          {
+            "metric": "win_rate",
+            "baseline": 2.825,
+            "candidate": 2.675,
+            "threshold": 2.825,
+            "margin": -0.15000000000000036
+          },
+          {
+            "metric": "deal_in_rate",
+            "baseline": 2.575,
+            "candidate": 2.5875,
+            "threshold": 2.585,
+            "margin": -0.0024999999999999467
+          },
           {
             "metric": "paired_confidence",
             "baseline": null,
@@ -252,203 +346,383 @@ Subjects:
               "baseline_policy": "baseline_neural",
               "candidate_policy": "awr_candidate_neural",
               "deltas": [
-                230.0,
+                58.0,
+                -19.0,
+                -82.0,
+                52.0,
+                26.0,
+                -43.0,
+                207.0,
+                -103.0,
+                -118.0,
+                -51.0,
+                75.0,
+                -156.0,
+                53.0,
+                85.0,
+                -3.0,
+                -10.0,
+                33.0,
+                -86.0,
+                119.0,
+                -244.0,
+                -94.0,
+                -3.0,
+                -284.0,
+                -25.0,
+                -152.0,
+                -8.0,
+                -113.0,
+                -191.0,
+                -131.0,
+                -163.0,
+                -26.0,
+                21.0,
+                -81.0,
+                -62.0,
+                145.0,
+                140.0,
+                7.0,
+                -98.0,
+                51.0,
+                14.0,
+                -11.0,
+                51.0,
+                135.0,
+                107.0,
+                -71.0,
+                -175.0,
+                0.0,
+                27.0,
+                18.0,
+                -114.0,
+                -13.0,
+                189.0,
+                -83.0,
+                43.0,
                 -6.0,
-                124.0,
-                -201.0,
-                168.0,
-                66.0,
-                133.0,
-                -145.0,
-                60.0,
-                -144.0,
-                50.0,
-                -47.0,
-                -16.0,
-                94.0,
-                59.0,
-                -101.0,
-                261.0,
-                -92.0,
-                110.0,
-                -35.0
+                -72.0,
+                -72.0,
+                113.0,
+                30.0,
+                53.0,
+                -10.0,
+                -74.0,
+                116.0,
+                222.0,
+                -19.0,
+                -43.0,
+                -167.0,
+                27.0,
+                25.0,
+                42.0,
+                61.0,
+                112.0,
+                -69.0,
+                96.0,
+                -26.0,
+                4.0,
+                163.0,
+                -82.0,
+                -109.0,
+                8.0
               ],
-              "paired_match_count": 20,
-              "avg_score_delta": 28.4,
-              "stddev_score_delta": 126.82453689209646,
-              "stderr_score_delta": 28.35882857056576,
-              "confidence95_low": -27.183303998308887,
-              "confidence95_high": 83.98330399830888,
-              "positive_delta_rate": 0.55,
-              "min_score_delta": -201.0,
-              "max_score_delta": 261.0
+              "paired_match_count": 80,
+              "avg_score_delta": -10.425,
+              "stddev_score_delta": 100.72204829459253,
+              "stderr_score_delta": 11.261067340986282,
+              "confidence95_low": -32.49669198833311,
+              "confidence95_high": 11.64669198833311,
+              "positive_delta_rate": 0.45,
+              "min_score_delta": -284.0,
+              "max_score_delta": 222.0
             },
             "threshold": "confidence95_low_gt_0",
-            "margin": -27.183303998308887
+            "margin": -32.49669198833311
           }
         ],
         "baseline": {
-          "seat_count": 20,
-          "avg_score_delta": -65.7,
-          "win_rate": 2.55,
-          "deal_in_rate": 2.8,
-          "avg_first_tenpai_turn": 12.5,
-          "final_tenpai_rate": 0.55,
-          "avg_claims": 26.7,
-          "avg_discards": 248.0,
-          "avg_decisions": 328.5,
-          "avg_latency_ms_per_decision": 0.06301369863013699,
-          "model_loaded_seats": 20,
-          "neural_action_count": 6277,
-          "latency_sample_count": 20,
-          "latency_ms_p50": 0.06211663791451025,
-          "latency_ms_p95": 0.07824583541195919,
-          "latency_ms_max": 0.08143322475570032
+          "seat_count": 80,
+          "avg_score_delta": -49.1125,
+          "win_rate": 2.825,
+          "deal_in_rate": 2.575,
+          "avg_first_tenpai_turn": 12.85,
+          "final_tenpai_rate": 0.6125,
+          "avg_claims": 26.0375,
+          "avg_discards": 244.3375,
+          "avg_decisions": 321.1875,
+          "avg_latency_ms_per_decision": 0.3733411169488227,
+          "model_loaded_seats": 80,
+          "neural_action_count": 24665,
+          "latency_sample_count": 80,
+          "latency_ms_p50": 0.4424843862599087,
+          "latency_ms_p95": 0.6116190248057063,
+          "latency_ms_max": 0.6666666666666666
         },
         "candidate": {
-          "seat_count": 20,
-          "avg_score_delta": -37.3,
-          "win_rate": 3.05,
-          "deal_in_rate": 2.4,
-          "avg_first_tenpai_turn": 11.9,
-          "final_tenpai_rate": 0.55,
-          "avg_claims": 28.0,
-          "avg_discards": 248.05,
-          "avg_decisions": 325.1,
-          "avg_latency_ms_per_decision": 0.13580436788680406,
-          "model_loaded_seats": 20,
-          "neural_action_count": 6210,
-          "latency_sample_count": 20,
-          "latency_ms_p50": 0.1356260675338326,
-          "latency_ms_p95": 0.1613253360312184,
-          "latency_ms_max": 0.1783783783783784
+          "seat_count": 80,
+          "avg_score_delta": -59.5375,
+          "win_rate": 2.675,
+          "deal_in_rate": 2.5875,
+          "avg_first_tenpai_turn": 12.475,
+          "final_tenpai_rate": 0.625,
+          "avg_claims": 27.0875,
+          "avg_discards": 248.3125,
+          "avg_decisions": 326.2375,
+          "avg_latency_ms_per_decision": 0.1296984558795356,
+          "model_loaded_seats": 80,
+          "neural_action_count": 25034,
+          "latency_sample_count": 80,
+          "latency_ms_p50": 0.11631563551265175,
+          "latency_ms_p95": 0.20858333333333332,
+          "latency_ms_max": 0.698170731707317
         },
         "paired": {
           "baseline_policy": "baseline_neural",
           "candidate_policy": "awr_candidate_neural",
           "deltas": [
-            230.0,
+            58.0,
+            -19.0,
+            -82.0,
+            52.0,
+            26.0,
+            -43.0,
+            207.0,
+            -103.0,
+            -118.0,
+            -51.0,
+            75.0,
+            -156.0,
+            53.0,
+            85.0,
+            -3.0,
+            -10.0,
+            33.0,
+            -86.0,
+            119.0,
+            -244.0,
+            -94.0,
+            -3.0,
+            -284.0,
+            -25.0,
+            -152.0,
+            -8.0,
+            -113.0,
+            -191.0,
+            -131.0,
+            -163.0,
+            -26.0,
+            21.0,
+            -81.0,
+            -62.0,
+            145.0,
+            140.0,
+            7.0,
+            -98.0,
+            51.0,
+            14.0,
+            -11.0,
+            51.0,
+            135.0,
+            107.0,
+            -71.0,
+            -175.0,
+            0.0,
+            27.0,
+            18.0,
+            -114.0,
+            -13.0,
+            189.0,
+            -83.0,
+            43.0,
             -6.0,
-            124.0,
-            -201.0,
-            168.0,
-            66.0,
-            133.0,
-            -145.0,
-            60.0,
-            -144.0,
-            50.0,
-            -47.0,
-            -16.0,
-            94.0,
-            59.0,
-            -101.0,
-            261.0,
-            -92.0,
-            110.0,
-            -35.0
+            -72.0,
+            -72.0,
+            113.0,
+            30.0,
+            53.0,
+            -10.0,
+            -74.0,
+            116.0,
+            222.0,
+            -19.0,
+            -43.0,
+            -167.0,
+            27.0,
+            25.0,
+            42.0,
+            61.0,
+            112.0,
+            -69.0,
+            96.0,
+            -26.0,
+            4.0,
+            163.0,
+            -82.0,
+            -109.0,
+            8.0
           ],
-          "paired_match_count": 20,
-          "avg_score_delta": 28.4,
-          "stddev_score_delta": 126.82453689209646,
-          "stderr_score_delta": 28.35882857056576,
-          "confidence95_low": -27.183303998308887,
-          "confidence95_high": 83.98330399830888,
-          "positive_delta_rate": 0.55,
-          "min_score_delta": -201.0,
-          "max_score_delta": 261.0
+          "paired_match_count": 80,
+          "avg_score_delta": -10.425,
+          "stddev_score_delta": 100.72204829459253,
+          "stderr_score_delta": 11.261067340986282,
+          "confidence95_low": -32.49669198833311,
+          "confidence95_high": 11.64669198833311,
+          "positive_delta_rate": 0.45,
+          "min_score_delta": -284.0,
+          "max_score_delta": 222.0
         },
         "promotion_report": {
           "metrics": {
             "avg_score_delta": {
-              "baseline": -65.7,
-              "candidate": -37.3,
-              "threshold": -65.7,
-              "margin": 28.400000000000006,
-              "passed": true
+              "baseline": -49.1125,
+              "candidate": -59.5375,
+              "threshold": -49.1125,
+              "margin": -10.425000000000004,
+              "passed": false
             },
             "win_rate": {
-              "baseline": 2.55,
-              "candidate": 3.05,
-              "threshold": 2.55,
-              "margin": 0.5,
-              "passed": true
+              "baseline": 2.825,
+              "candidate": 2.675,
+              "threshold": 2.825,
+              "margin": -0.15000000000000036,
+              "passed": false
             },
             "deal_in_rate": {
-              "baseline": 2.8,
-              "candidate": 2.4,
-              "threshold": 2.8099999999999996,
-              "margin": 0.4099999999999997,
-              "passed": true
+              "baseline": 2.575,
+              "candidate": 2.5875,
+              "threshold": 2.585,
+              "margin": -0.0024999999999999467,
+              "passed": false
             },
             "tenpai": {
               "baseline": {
-                "avg_first_tenpai_turn": 12.5,
-                "final_tenpai_rate": 0.55
+                "avg_first_tenpai_turn": 12.85,
+                "final_tenpai_rate": 0.6125
               },
               "candidate": {
-                "avg_first_tenpai_turn": 11.9,
-                "final_tenpai_rate": 0.55
+                "avg_first_tenpai_turn": 12.475,
+                "final_tenpai_rate": 0.625
               },
               "threshold": "first_tenpai_not_later_or_final_tenpai_not_lower",
-              "margin": 0.5999999999999996,
-              "first_tenpai_margin": 0.5999999999999996,
-              "final_tenpai_margin": 0.0,
+              "margin": 0.375,
+              "first_tenpai_margin": 0.375,
+              "final_tenpai_margin": 0.012499999999999956,
               "passed": true
             }
           },
           "claim_rate": {
-            "baseline": 26.7,
-            "candidate": 28.0,
-            "threshold": 53.4,
-            "margin": 25.4,
+            "baseline": 26.0375,
+            "candidate": 27.0875,
+            "threshold": 52.075,
+            "margin": 24.987500000000004,
             "passed": true
           },
           "latency": {
-            "baseline": 0.06301369863013699,
-            "candidate": 0.13580436788680406,
-            "candidate_avg_ms_per_decision": 0.13580436788680406,
-            "candidate_p95_ms": 0.1613253360312184,
-            "candidate_max_ms": 0.1783783783783784,
+            "baseline": 0.3733411169488227,
+            "candidate": 0.1296984558795356,
+            "candidate_avg_ms_per_decision": 0.1296984558795356,
+            "candidate_p95_ms": 0.20858333333333332,
+            "candidate_max_ms": 0.698170731707317,
             "threshold": 200.0,
             "limit_ms": 200.0,
-            "margin": 199.8641956321132,
+            "margin": 199.87030154412045,
             "passed": true
           },
           "paired": {
             "baseline_policy": "baseline_neural",
             "candidate_policy": "awr_candidate_neural",
             "deltas": [
-              230.0,
+              58.0,
+              -19.0,
+              -82.0,
+              52.0,
+              26.0,
+              -43.0,
+              207.0,
+              -103.0,
+              -118.0,
+              -51.0,
+              75.0,
+              -156.0,
+              53.0,
+              85.0,
+              -3.0,
+              -10.0,
+              33.0,
+              -86.0,
+              119.0,
+              -244.0,
+              -94.0,
+              -3.0,
+              -284.0,
+              -25.0,
+              -152.0,
+              -8.0,
+              -113.0,
+              -191.0,
+              -131.0,
+              -163.0,
+              -26.0,
+              21.0,
+              -81.0,
+              -62.0,
+              145.0,
+              140.0,
+              7.0,
+              -98.0,
+              51.0,
+              14.0,
+              -11.0,
+              51.0,
+              135.0,
+              107.0,
+              -71.0,
+              -175.0,
+              0.0,
+              27.0,
+              18.0,
+              -114.0,
+              -13.0,
+              189.0,
+              -83.0,
+              43.0,
               -6.0,
-              124.0,
-              -201.0,
-              168.0,
-              66.0,
-              133.0,
-              -145.0,
-              60.0,
-              -144.0,
-              50.0,
-              -47.0,
-              -16.0,
-              94.0,
-              59.0,
-              -101.0,
-              261.0,
-              -92.0,
-              110.0,
-              -35.0
+              -72.0,
+              -72.0,
+              113.0,
+              30.0,
+              53.0,
+              -10.0,
+              -74.0,
+              116.0,
+              222.0,
+              -19.0,
+              -43.0,
+              -167.0,
+              27.0,
+              25.0,
+              42.0,
+              61.0,
+              112.0,
+              -69.0,
+              96.0,
+              -26.0,
+              4.0,
+              163.0,
+              -82.0,
+              -109.0,
+              8.0
             ],
-            "paired_match_count": 20,
-            "avg_score_delta": 28.4,
-            "stddev_score_delta": 126.82453689209646,
-            "stderr_score_delta": 28.35882857056576,
-            "confidence95_low": -27.183303998308887,
-            "confidence95_high": 83.98330399830888,
-            "positive_delta_rate": 0.55,
-            "min_score_delta": -201.0,
-            "max_score_delta": 261.0
+            "paired_match_count": 80,
+            "avg_score_delta": -10.425,
+            "stddev_score_delta": 100.72204829459253,
+            "stderr_score_delta": 11.261067340986282,
+            "confidence95_low": -32.49669198833311,
+            "confidence95_high": 11.64669198833311,
+            "positive_delta_rate": 0.45,
+            "min_score_delta": -284.0,
+            "max_score_delta": 222.0
           },
           "warnings": [
             "paired_confidence_interval_crosses_zero"
@@ -462,16 +736,16 @@ Subjects:
       "result": {
         "accepted": false,
         "failures": [
-          "avg_score_delta",
+          "deal_in_rate",
           "paired_confidence"
         ],
         "failure_details": [
           {
-            "metric": "avg_score_delta",
-            "baseline": 7.35,
-            "candidate": 2.35,
-            "threshold": 7.35,
-            "margin": -5.0
+            "metric": "deal_in_rate",
+            "baseline": 2.35,
+            "candidate": 2.3875,
+            "threshold": 2.36,
+            "margin": -0.027500000000000302
           },
           {
             "metric": "paired_confidence",
@@ -480,203 +754,383 @@ Subjects:
               "baseline_policy": "baseline_neural",
               "candidate_policy": "awr_candidate_neural",
               "deltas": [
-                123.0,
-                110.0,
-                -121.0,
-                -85.0,
-                38.0,
-                -204.0,
-                179.0,
-                110.0,
-                -11.0,
-                234.0,
-                -294.0,
+                96.0,
+                71.0,
+                109.0,
+                -236.0,
                 60.0,
-                -88.0,
-                -59.0,
-                34.0,
-                -159.0,
-                84.0,
-                -189.0,
+                99.0,
+                -60.0,
+                -16.0,
+                99.0,
+                144.0,
+                -202.0,
+                -37.0,
+                -5.0,
+                -187.0,
+                -102.0,
+                -170.0,
+                -100.0,
+                -102.0,
+                111.0,
+                -21.0,
+                -41.0,
+                111.0,
                 38.0,
-                100.0
+                -105.0,
+                51.0,
+                105.0,
+                -172.0,
+                150.0,
+                31.0,
+                123.0,
+                39.0,
+                -87.0,
+                120.0,
+                -29.0,
+                56.0,
+                70.0,
+                145.0,
+                128.0,
+                -7.0,
+                75.0,
+                -115.0,
+                -239.0,
+                -183.0,
+                124.0,
+                17.0,
+                87.0,
+                11.0,
+                -93.0,
+                143.0,
+                29.0,
+                -8.0,
+                -59.0,
+                20.0,
+                -76.0,
+                -129.0,
+                -33.0,
+                171.0,
+                15.0,
+                -75.0,
+                -27.0,
+                147.0,
+                118.0,
+                8.0,
+                -204.0,
+                55.0,
+                114.0,
+                72.0,
+                101.0,
+                195.0,
+                -139.0,
+                -56.0,
+                -34.0,
+                -73.0,
+                137.0,
+                -73.0,
+                -20.0,
+                169.0,
+                69.0,
+                163.0,
+                -112.0
               ],
-              "paired_match_count": 20,
-              "avg_score_delta": -5.0,
-              "stddev_score_delta": 140.03608557496133,
-              "stderr_score_delta": 31.313020664859124,
-              "confidence95_low": -66.37352050312388,
-              "confidence95_high": 56.373520503123885,
-              "positive_delta_rate": 0.55,
-              "min_score_delta": -294.0,
-              "max_score_delta": 234.0
+              "paired_match_count": 80,
+              "avg_score_delta": 7.1125,
+              "stddev_score_delta": 109.76718673998222,
+              "stderr_score_delta": 12.272344562475688,
+              "confidence95_low": -16.941295342452346,
+              "confidence95_high": 31.166295342452347,
+              "positive_delta_rate": 0.5375,
+              "min_score_delta": -239.0,
+              "max_score_delta": 195.0
             },
             "threshold": "confidence95_low_gt_0",
-            "margin": -66.37352050312388
+            "margin": -16.941295342452346
           }
         ],
         "baseline": {
-          "seat_count": 20,
-          "avg_score_delta": 7.35,
-          "win_rate": 3.5,
-          "deal_in_rate": 1.95,
-          "avg_first_tenpai_turn": 12.5,
-          "final_tenpai_rate": 0.6,
-          "avg_claims": 28.1,
-          "avg_discards": 264.4,
-          "avg_decisions": 346.85,
-          "avg_latency_ms_per_decision": 0.05477872279083177,
-          "model_loaded_seats": 20,
-          "neural_action_count": 6665,
-          "latency_sample_count": 20,
-          "latency_ms_p50": 0.05505708430913349,
-          "latency_ms_p95": 0.07582203330288766,
-          "latency_ms_max": 0.08139534883720931
+          "seat_count": 80,
+          "avg_score_delta": -8.8375,
+          "win_rate": 3.4,
+          "deal_in_rate": 2.35,
+          "avg_first_tenpai_turn": 13.2875,
+          "final_tenpai_rate": 0.7,
+          "avg_claims": 28.2375,
+          "avg_discards": 263.8,
+          "avg_decisions": 345.7375,
+          "avg_latency_ms_per_decision": 0.19556021548139846,
+          "model_loaded_seats": 80,
+          "neural_action_count": 26600,
+          "latency_sample_count": 80,
+          "latency_ms_p50": 0.07680509674374705,
+          "latency_ms_p95": 0.504316739415687,
+          "latency_ms_max": 0.5393586005830904
         },
         "candidate": {
-          "seat_count": 20,
-          "avg_score_delta": 2.35,
-          "win_rate": 3.65,
-          "deal_in_rate": 1.8,
-          "avg_first_tenpai_turn": 12.65,
-          "final_tenpai_rate": 0.7,
-          "avg_claims": 27.2,
-          "avg_discards": 251.75,
-          "avg_decisions": 329.6,
-          "avg_latency_ms_per_decision": 0.13212985436893204,
-          "model_loaded_seats": 20,
-          "neural_action_count": 6355,
-          "latency_sample_count": 20,
-          "latency_ms_p50": 0.1335861650485437,
-          "latency_ms_p95": 0.16085093167701864,
-          "latency_ms_max": 0.17701863354037267
+          "seat_count": 80,
+          "avg_score_delta": -1.725,
+          "win_rate": 3.5375,
+          "deal_in_rate": 2.3875,
+          "avg_first_tenpai_turn": 13.25,
+          "final_tenpai_rate": 0.6625,
+          "avg_claims": 28.275,
+          "avg_discards": 260.7625,
+          "avg_decisions": 342.725,
+          "avg_latency_ms_per_decision": 0.14858851849150193,
+          "model_loaded_seats": 80,
+          "neural_action_count": 26363,
+          "latency_sample_count": 80,
+          "latency_ms_p50": 0.13724104037501889,
+          "latency_ms_p95": 0.19423319327731092,
+          "latency_ms_max": 0.6726190476190477
         },
         "paired": {
           "baseline_policy": "baseline_neural",
           "candidate_policy": "awr_candidate_neural",
           "deltas": [
-            123.0,
-            110.0,
-            -121.0,
-            -85.0,
-            38.0,
-            -204.0,
-            179.0,
-            110.0,
-            -11.0,
-            234.0,
-            -294.0,
+            96.0,
+            71.0,
+            109.0,
+            -236.0,
             60.0,
-            -88.0,
-            -59.0,
-            34.0,
-            -159.0,
-            84.0,
-            -189.0,
+            99.0,
+            -60.0,
+            -16.0,
+            99.0,
+            144.0,
+            -202.0,
+            -37.0,
+            -5.0,
+            -187.0,
+            -102.0,
+            -170.0,
+            -100.0,
+            -102.0,
+            111.0,
+            -21.0,
+            -41.0,
+            111.0,
             38.0,
-            100.0
+            -105.0,
+            51.0,
+            105.0,
+            -172.0,
+            150.0,
+            31.0,
+            123.0,
+            39.0,
+            -87.0,
+            120.0,
+            -29.0,
+            56.0,
+            70.0,
+            145.0,
+            128.0,
+            -7.0,
+            75.0,
+            -115.0,
+            -239.0,
+            -183.0,
+            124.0,
+            17.0,
+            87.0,
+            11.0,
+            -93.0,
+            143.0,
+            29.0,
+            -8.0,
+            -59.0,
+            20.0,
+            -76.0,
+            -129.0,
+            -33.0,
+            171.0,
+            15.0,
+            -75.0,
+            -27.0,
+            147.0,
+            118.0,
+            8.0,
+            -204.0,
+            55.0,
+            114.0,
+            72.0,
+            101.0,
+            195.0,
+            -139.0,
+            -56.0,
+            -34.0,
+            -73.0,
+            137.0,
+            -73.0,
+            -20.0,
+            169.0,
+            69.0,
+            163.0,
+            -112.0
           ],
-          "paired_match_count": 20,
-          "avg_score_delta": -5.0,
-          "stddev_score_delta": 140.03608557496133,
-          "stderr_score_delta": 31.313020664859124,
-          "confidence95_low": -66.37352050312388,
-          "confidence95_high": 56.373520503123885,
-          "positive_delta_rate": 0.55,
-          "min_score_delta": -294.0,
-          "max_score_delta": 234.0
+          "paired_match_count": 80,
+          "avg_score_delta": 7.1125,
+          "stddev_score_delta": 109.76718673998222,
+          "stderr_score_delta": 12.272344562475688,
+          "confidence95_low": -16.941295342452346,
+          "confidence95_high": 31.166295342452347,
+          "positive_delta_rate": 0.5375,
+          "min_score_delta": -239.0,
+          "max_score_delta": 195.0
         },
         "promotion_report": {
           "metrics": {
             "avg_score_delta": {
-              "baseline": 7.35,
-              "candidate": 2.35,
-              "threshold": 7.35,
-              "margin": -5.0,
-              "passed": false
+              "baseline": -8.8375,
+              "candidate": -1.725,
+              "threshold": -8.8375,
+              "margin": 7.112500000000001,
+              "passed": true
             },
             "win_rate": {
-              "baseline": 3.5,
-              "candidate": 3.65,
-              "threshold": 3.5,
-              "margin": 0.1499999999999999,
+              "baseline": 3.4,
+              "candidate": 3.5375,
+              "threshold": 3.4,
+              "margin": 0.13750000000000018,
               "passed": true
             },
             "deal_in_rate": {
-              "baseline": 1.95,
-              "candidate": 1.8,
-              "threshold": 1.96,
-              "margin": 0.15999999999999992,
-              "passed": true
+              "baseline": 2.35,
+              "candidate": 2.3875,
+              "threshold": 2.36,
+              "margin": -0.027500000000000302,
+              "passed": false
             },
             "tenpai": {
               "baseline": {
-                "avg_first_tenpai_turn": 12.5,
-                "final_tenpai_rate": 0.6
-              },
-              "candidate": {
-                "avg_first_tenpai_turn": 12.65,
+                "avg_first_tenpai_turn": 13.2875,
                 "final_tenpai_rate": 0.7
               },
+              "candidate": {
+                "avg_first_tenpai_turn": 13.25,
+                "final_tenpai_rate": 0.6625
+              },
               "threshold": "first_tenpai_not_later_or_final_tenpai_not_lower",
-              "margin": 0.09999999999999998,
-              "first_tenpai_margin": -0.15000000000000036,
-              "final_tenpai_margin": 0.09999999999999998,
+              "margin": 0.037499999999999645,
+              "first_tenpai_margin": 0.037499999999999645,
+              "final_tenpai_margin": -0.03749999999999998,
               "passed": true
             }
           },
           "claim_rate": {
-            "baseline": 28.1,
-            "candidate": 27.2,
-            "threshold": 56.2,
-            "margin": 29.000000000000004,
+            "baseline": 28.2375,
+            "candidate": 28.275,
+            "threshold": 56.475,
+            "margin": 28.200000000000003,
             "passed": true
           },
           "latency": {
-            "baseline": 0.05477872279083177,
-            "candidate": 0.13212985436893204,
-            "candidate_avg_ms_per_decision": 0.13212985436893204,
-            "candidate_p95_ms": 0.16085093167701864,
-            "candidate_max_ms": 0.17701863354037267,
+            "baseline": 0.19556021548139846,
+            "candidate": 0.14858851849150193,
+            "candidate_avg_ms_per_decision": 0.14858851849150193,
+            "candidate_p95_ms": 0.19423319327731092,
+            "candidate_max_ms": 0.6726190476190477,
             "threshold": 200.0,
             "limit_ms": 200.0,
-            "margin": 199.86787014563106,
+            "margin": 199.8514114815085,
             "passed": true
           },
           "paired": {
             "baseline_policy": "baseline_neural",
             "candidate_policy": "awr_candidate_neural",
             "deltas": [
-              123.0,
-              110.0,
-              -121.0,
-              -85.0,
-              38.0,
-              -204.0,
-              179.0,
-              110.0,
-              -11.0,
-              234.0,
-              -294.0,
+              96.0,
+              71.0,
+              109.0,
+              -236.0,
               60.0,
-              -88.0,
-              -59.0,
-              34.0,
-              -159.0,
-              84.0,
-              -189.0,
+              99.0,
+              -60.0,
+              -16.0,
+              99.0,
+              144.0,
+              -202.0,
+              -37.0,
+              -5.0,
+              -187.0,
+              -102.0,
+              -170.0,
+              -100.0,
+              -102.0,
+              111.0,
+              -21.0,
+              -41.0,
+              111.0,
               38.0,
-              100.0
+              -105.0,
+              51.0,
+              105.0,
+              -172.0,
+              150.0,
+              31.0,
+              123.0,
+              39.0,
+              -87.0,
+              120.0,
+              -29.0,
+              56.0,
+              70.0,
+              145.0,
+              128.0,
+              -7.0,
+              75.0,
+              -115.0,
+              -239.0,
+              -183.0,
+              124.0,
+              17.0,
+              87.0,
+              11.0,
+              -93.0,
+              143.0,
+              29.0,
+              -8.0,
+              -59.0,
+              20.0,
+              -76.0,
+              -129.0,
+              -33.0,
+              171.0,
+              15.0,
+              -75.0,
+              -27.0,
+              147.0,
+              118.0,
+              8.0,
+              -204.0,
+              55.0,
+              114.0,
+              72.0,
+              101.0,
+              195.0,
+              -139.0,
+              -56.0,
+              -34.0,
+              -73.0,
+              137.0,
+              -73.0,
+              -20.0,
+              169.0,
+              69.0,
+              163.0,
+              -112.0
             ],
-            "paired_match_count": 20,
-            "avg_score_delta": -5.0,
-            "stddev_score_delta": 140.03608557496133,
-            "stderr_score_delta": 31.313020664859124,
-            "confidence95_low": -66.37352050312388,
-            "confidence95_high": 56.373520503123885,
-            "positive_delta_rate": 0.55,
-            "min_score_delta": -294.0,
-            "max_score_delta": 234.0
+            "paired_match_count": 80,
+            "avg_score_delta": 7.1125,
+            "stddev_score_delta": 109.76718673998222,
+            "stderr_score_delta": 12.272344562475688,
+            "confidence95_low": -16.941295342452346,
+            "confidence95_high": 31.166295342452347,
+            "positive_delta_rate": 0.5375,
+            "min_score_delta": -239.0,
+            "max_score_delta": 195.0
           },
           "warnings": [
             "paired_confidence_interval_crosses_zero"
@@ -690,32 +1144,30 @@ Subjects:
       "result": {
         "accepted": false,
         "failures": [
-          "avg_score_delta",
-          "win_rate",
           "deal_in_rate",
+          "tenpai",
           "paired_confidence"
         ],
         "failure_details": [
           {
-            "metric": "avg_score_delta",
-            "baseline": 95.7,
-            "candidate": 50.9,
-            "threshold": 95.7,
-            "margin": -44.800000000000004
-          },
-          {
-            "metric": "win_rate",
-            "baseline": 4.45,
-            "candidate": 3.75,
-            "threshold": 4.45,
-            "margin": -0.7000000000000002
-          },
-          {
             "metric": "deal_in_rate",
-            "baseline": 1.05,
-            "candidate": 1.7,
-            "threshold": 1.06,
-            "margin": -0.6399999999999999
+            "baseline": 1.375,
+            "candidate": 1.5,
+            "threshold": 1.385,
+            "margin": -0.11499999999999999
+          },
+          {
+            "metric": "tenpai",
+            "baseline": {
+              "avg_first_tenpai_turn": 12.0,
+              "final_tenpai_rate": 0.7875
+            },
+            "candidate": {
+              "avg_first_tenpai_turn": 12.1625,
+              "final_tenpai_rate": 0.675
+            },
+            "threshold": "first_tenpai_not_later_or_final_tenpai_not_lower",
+            "margin": -0.11249999999999993
           },
           {
             "metric": "paired_confidence",
@@ -724,203 +1176,383 @@ Subjects:
               "baseline_policy": "baseline_neural",
               "candidate_policy": "awr_candidate_neural",
               "deltas": [
-                -36.0,
-                -125.0,
-                128.0,
-                -85.0,
-                85.0,
-                -102.0,
-                -227.0,
-                143.0,
-                -270.0,
-                -57.0,
-                23.0,
-                -18.0,
                 -13.0,
-                31.0,
-                -119.0,
-                55.0,
-                118.0,
+                -27.0,
+                217.0,
+                -81.0,
+                -45.0,
+                -45.0,
+                -341.0,
+                117.0,
+                -151.0,
+                146.0,
+                197.0,
+                -93.0,
+                98.0,
+                171.0,
+                -130.0,
+                88.0,
+                80.0,
+                21.0,
+                -395.0,
+                -184.0,
+                52.0,
+                123.0,
+                21.0,
+                -45.0,
+                0.0,
+                21.0,
+                172.0,
+                -76.0,
+                -139.0,
+                21.0,
+                -48.0,
+                -27.0,
+                -63.0,
+                179.0,
+                -5.0,
+                -83.0,
+                77.0,
+                -47.0,
+                -118.0,
+                33.0,
+                90.0,
+                -128.0,
+                -101.0,
+                -117.0,
+                -21.0,
+                63.0,
+                -4.0,
+                249.0,
+                92.0,
+                29.0,
+                39.0,
+                265.0,
+                200.0,
+                81.0,
+                29.0,
+                255.0,
+                7.0,
+                -25.0,
+                90.0,
+                58.0,
+                -218.0,
+                11.0,
+                176.0,
                 -134.0,
-                -116.0,
-                -177.0
+                -67.0,
+                171.0,
+                -127.0,
+                27.0,
+                -19.0,
+                74.0,
+                -58.0,
+                138.0,
+                29.0,
+                -180.0,
+                127.0,
+                12.0,
+                86.0,
+                98.0,
+                1.0,
+                -46.0
               ],
-              "paired_match_count": 20,
-              "avg_score_delta": -44.8,
-              "stddev_score_delta": 117.42392834243121,
-              "stderr_score_delta": 26.25678859587404,
-              "confidence95_low": -96.26330564791311,
-              "confidence95_high": 6.66330564791312,
-              "positive_delta_rate": 0.35,
-              "min_score_delta": -270.0,
-              "max_score_delta": 143.0
+              "paired_match_count": 80,
+              "avg_score_delta": 11.625,
+              "stddev_score_delta": 125.2324800147027,
+              "stderr_score_delta": 14.001416915187955,
+              "confidence95_low": -15.81777715376839,
+              "confidence95_high": 39.06777715376839,
+              "positive_delta_rate": 0.55,
+              "min_score_delta": -395.0,
+              "max_score_delta": 265.0
             },
             "threshold": "confidence95_low_gt_0",
-            "margin": -96.26330564791311
+            "margin": -15.81777715376839
           }
         ],
         "baseline": {
-          "seat_count": 20,
-          "avg_score_delta": 95.7,
-          "win_rate": 4.45,
-          "deal_in_rate": 1.05,
-          "avg_first_tenpai_turn": 12.4,
-          "final_tenpai_rate": 0.75,
-          "avg_claims": 30.95,
-          "avg_discards": 283.0,
-          "avg_decisions": 372.05,
-          "avg_latency_ms_per_decision": 0.0585942749630426,
-          "model_loaded_seats": 20,
-          "neural_action_count": 7143,
-          "latency_sample_count": 20,
-          "latency_ms_p50": 0.058186401676706384,
-          "latency_ms_p95": 0.07749832973584131,
-          "latency_ms_max": 0.08454106280193237
+          "seat_count": 80,
+          "avg_score_delta": 73.225,
+          "win_rate": 4.0,
+          "deal_in_rate": 1.375,
+          "avg_first_tenpai_turn": 12.0,
+          "final_tenpai_rate": 0.7875,
+          "avg_claims": 29.95,
+          "avg_discards": 288.825,
+          "avg_decisions": 381.15,
+          "avg_latency_ms_per_decision": 0.0686737504919323,
+          "model_loaded_seats": 80,
+          "neural_action_count": 29298,
+          "latency_sample_count": 80,
+          "latency_ms_p50": 0.06597645420087594,
+          "latency_ms_p95": 0.09255549712921377,
+          "latency_ms_max": 0.3125
         },
         "candidate": {
-          "seat_count": 20,
-          "avg_score_delta": 50.9,
-          "win_rate": 3.75,
-          "deal_in_rate": 1.7,
-          "avg_first_tenpai_turn": 11.55,
-          "final_tenpai_rate": 0.6,
-          "avg_claims": 32.1,
-          "avg_discards": 290.85,
-          "avg_decisions": 381.2,
-          "avg_latency_ms_per_decision": 0.13982161594963274,
-          "model_loaded_seats": 20,
-          "neural_action_count": 7319,
-          "latency_sample_count": 20,
-          "latency_ms_p50": 0.13268156424581007,
-          "latency_ms_p95": 0.1755162491536899,
-          "latency_ms_max": 0.17857142857142858
+          "seat_count": 80,
+          "avg_score_delta": 84.85,
+          "win_rate": 4.525,
+          "deal_in_rate": 1.5,
+          "avg_first_tenpai_turn": 12.1625,
+          "final_tenpai_rate": 0.675,
+          "avg_claims": 30.5125,
+          "avg_discards": 285.575,
+          "avg_decisions": 377.9,
+          "avg_latency_ms_per_decision": 0.13598174120137602,
+          "model_loaded_seats": 80,
+          "neural_action_count": 29069,
+          "latency_sample_count": 80,
+          "latency_ms_p50": 0.1388058833366051,
+          "latency_ms_p95": 0.16197214734950582,
+          "latency_ms_max": 0.17094017094017094
         },
         "paired": {
           "baseline_policy": "baseline_neural",
           "candidate_policy": "awr_candidate_neural",
           "deltas": [
-            -36.0,
-            -125.0,
-            128.0,
-            -85.0,
-            85.0,
-            -102.0,
-            -227.0,
-            143.0,
-            -270.0,
-            -57.0,
-            23.0,
-            -18.0,
             -13.0,
-            31.0,
-            -119.0,
-            55.0,
-            118.0,
+            -27.0,
+            217.0,
+            -81.0,
+            -45.0,
+            -45.0,
+            -341.0,
+            117.0,
+            -151.0,
+            146.0,
+            197.0,
+            -93.0,
+            98.0,
+            171.0,
+            -130.0,
+            88.0,
+            80.0,
+            21.0,
+            -395.0,
+            -184.0,
+            52.0,
+            123.0,
+            21.0,
+            -45.0,
+            0.0,
+            21.0,
+            172.0,
+            -76.0,
+            -139.0,
+            21.0,
+            -48.0,
+            -27.0,
+            -63.0,
+            179.0,
+            -5.0,
+            -83.0,
+            77.0,
+            -47.0,
+            -118.0,
+            33.0,
+            90.0,
+            -128.0,
+            -101.0,
+            -117.0,
+            -21.0,
+            63.0,
+            -4.0,
+            249.0,
+            92.0,
+            29.0,
+            39.0,
+            265.0,
+            200.0,
+            81.0,
+            29.0,
+            255.0,
+            7.0,
+            -25.0,
+            90.0,
+            58.0,
+            -218.0,
+            11.0,
+            176.0,
             -134.0,
-            -116.0,
-            -177.0
+            -67.0,
+            171.0,
+            -127.0,
+            27.0,
+            -19.0,
+            74.0,
+            -58.0,
+            138.0,
+            29.0,
+            -180.0,
+            127.0,
+            12.0,
+            86.0,
+            98.0,
+            1.0,
+            -46.0
           ],
-          "paired_match_count": 20,
-          "avg_score_delta": -44.8,
-          "stddev_score_delta": 117.42392834243121,
-          "stderr_score_delta": 26.25678859587404,
-          "confidence95_low": -96.26330564791311,
-          "confidence95_high": 6.66330564791312,
-          "positive_delta_rate": 0.35,
-          "min_score_delta": -270.0,
-          "max_score_delta": 143.0
+          "paired_match_count": 80,
+          "avg_score_delta": 11.625,
+          "stddev_score_delta": 125.2324800147027,
+          "stderr_score_delta": 14.001416915187955,
+          "confidence95_low": -15.81777715376839,
+          "confidence95_high": 39.06777715376839,
+          "positive_delta_rate": 0.55,
+          "min_score_delta": -395.0,
+          "max_score_delta": 265.0
         },
         "promotion_report": {
           "metrics": {
             "avg_score_delta": {
-              "baseline": 95.7,
-              "candidate": 50.9,
-              "threshold": 95.7,
-              "margin": -44.800000000000004,
-              "passed": false
+              "baseline": 73.225,
+              "candidate": 84.85,
+              "threshold": 73.225,
+              "margin": 11.625,
+              "passed": true
             },
             "win_rate": {
-              "baseline": 4.45,
-              "candidate": 3.75,
-              "threshold": 4.45,
-              "margin": -0.7000000000000002,
-              "passed": false
+              "baseline": 4.0,
+              "candidate": 4.525,
+              "threshold": 4.0,
+              "margin": 0.5250000000000004,
+              "passed": true
             },
             "deal_in_rate": {
-              "baseline": 1.05,
-              "candidate": 1.7,
-              "threshold": 1.06,
-              "margin": -0.6399999999999999,
+              "baseline": 1.375,
+              "candidate": 1.5,
+              "threshold": 1.385,
+              "margin": -0.11499999999999999,
               "passed": false
             },
             "tenpai": {
               "baseline": {
-                "avg_first_tenpai_turn": 12.4,
-                "final_tenpai_rate": 0.75
+                "avg_first_tenpai_turn": 12.0,
+                "final_tenpai_rate": 0.7875
               },
               "candidate": {
-                "avg_first_tenpai_turn": 11.55,
-                "final_tenpai_rate": 0.6
+                "avg_first_tenpai_turn": 12.1625,
+                "final_tenpai_rate": 0.675
               },
               "threshold": "first_tenpai_not_later_or_final_tenpai_not_lower",
-              "margin": 0.8499999999999996,
-              "first_tenpai_margin": 0.8499999999999996,
-              "final_tenpai_margin": -0.15000000000000002,
-              "passed": true
+              "margin": -0.11249999999999993,
+              "first_tenpai_margin": -0.16249999999999964,
+              "final_tenpai_margin": -0.11249999999999993,
+              "passed": false
             }
           },
           "claim_rate": {
-            "baseline": 30.95,
-            "candidate": 32.1,
-            "threshold": 61.9,
-            "margin": 29.799999999999997,
+            "baseline": 29.95,
+            "candidate": 30.5125,
+            "threshold": 59.9,
+            "margin": 29.3875,
             "passed": true
           },
           "latency": {
-            "baseline": 0.0585942749630426,
-            "candidate": 0.13982161594963274,
-            "candidate_avg_ms_per_decision": 0.13982161594963274,
-            "candidate_p95_ms": 0.1755162491536899,
-            "candidate_max_ms": 0.17857142857142858,
+            "baseline": 0.0686737504919323,
+            "candidate": 0.13598174120137602,
+            "candidate_avg_ms_per_decision": 0.13598174120137602,
+            "candidate_p95_ms": 0.16197214734950582,
+            "candidate_max_ms": 0.17094017094017094,
             "threshold": 200.0,
             "limit_ms": 200.0,
-            "margin": 199.86017838405036,
+            "margin": 199.86401825879864,
             "passed": true
           },
           "paired": {
             "baseline_policy": "baseline_neural",
             "candidate_policy": "awr_candidate_neural",
             "deltas": [
-              -36.0,
-              -125.0,
-              128.0,
-              -85.0,
-              85.0,
-              -102.0,
-              -227.0,
-              143.0,
-              -270.0,
-              -57.0,
-              23.0,
-              -18.0,
               -13.0,
-              31.0,
-              -119.0,
-              55.0,
-              118.0,
+              -27.0,
+              217.0,
+              -81.0,
+              -45.0,
+              -45.0,
+              -341.0,
+              117.0,
+              -151.0,
+              146.0,
+              197.0,
+              -93.0,
+              98.0,
+              171.0,
+              -130.0,
+              88.0,
+              80.0,
+              21.0,
+              -395.0,
+              -184.0,
+              52.0,
+              123.0,
+              21.0,
+              -45.0,
+              0.0,
+              21.0,
+              172.0,
+              -76.0,
+              -139.0,
+              21.0,
+              -48.0,
+              -27.0,
+              -63.0,
+              179.0,
+              -5.0,
+              -83.0,
+              77.0,
+              -47.0,
+              -118.0,
+              33.0,
+              90.0,
+              -128.0,
+              -101.0,
+              -117.0,
+              -21.0,
+              63.0,
+              -4.0,
+              249.0,
+              92.0,
+              29.0,
+              39.0,
+              265.0,
+              200.0,
+              81.0,
+              29.0,
+              255.0,
+              7.0,
+              -25.0,
+              90.0,
+              58.0,
+              -218.0,
+              11.0,
+              176.0,
               -134.0,
-              -116.0,
-              -177.0
+              -67.0,
+              171.0,
+              -127.0,
+              27.0,
+              -19.0,
+              74.0,
+              -58.0,
+              138.0,
+              29.0,
+              -180.0,
+              127.0,
+              12.0,
+              86.0,
+              98.0,
+              1.0,
+              -46.0
             ],
-            "paired_match_count": 20,
-            "avg_score_delta": -44.8,
-            "stddev_score_delta": 117.42392834243121,
-            "stderr_score_delta": 26.25678859587404,
-            "confidence95_low": -96.26330564791311,
-            "confidence95_high": 6.66330564791312,
-            "positive_delta_rate": 0.35,
-            "min_score_delta": -270.0,
-            "max_score_delta": 143.0
+            "paired_match_count": 80,
+            "avg_score_delta": 11.625,
+            "stddev_score_delta": 125.2324800147027,
+            "stderr_score_delta": 14.001416915187955,
+            "confidence95_low": -15.81777715376839,
+            "confidence95_high": 39.06777715376839,
+            "positive_delta_rate": 0.55,
+            "min_score_delta": -395.0,
+            "max_score_delta": 265.0
           },
           "warnings": [
             "paired_confidence_interval_crosses_zero"
@@ -933,6 +1565,7 @@ Subjects:
     "avg_score_delta",
     "deal_in_rate",
     "paired_confidence",
+    "tenpai",
     "win_rate"
   ]
 }
