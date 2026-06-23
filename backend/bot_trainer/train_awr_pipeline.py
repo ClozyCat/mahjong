@@ -231,6 +231,7 @@ def main() -> None:
             "--batch-size", "512",
             "--lr", "3e-5",
             "--temperature", "0.5",
+            "--adv-source", "terminal",
             "--sft-checkpoint", str(base_ckpt),
             "--policy-id", "learner",
         ])

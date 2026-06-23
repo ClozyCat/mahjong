@@ -107,17 +107,10 @@ pub(crate) fn shaping_reward(before: RewardSnapshot, after: RewardSnapshot) -> f
         0.0
     };
     let fan_progress_reward =
-        ((after.raw_fan_potential - before.raw_fan_potential) as f32 / 8.0)
+        ((after.qualifying_fan_potential - before.qualifying_fan_potential) as f32 / 8.0)
             .clamp(-1.0, 1.0)
             * 0.15;
-    let high_fan_bonus = if after.raw_fan_potential >= 24 {
-        0.05
-    } else if after.raw_fan_potential >= 16 {
-        0.03
-    } else {
-        0.0
-    };
-    shanten_reward + tenpai_bonus + fan_progress_reward + high_fan_bonus
+    shanten_reward + tenpai_bonus + fan_progress_reward
 }
 
 fn tile_counts_for_tile_keys(tile_keys: &[String]) -> Option<[u8; TILE_KIND_COUNT]> {

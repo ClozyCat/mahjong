@@ -33,11 +33,11 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--checkpoint", type=Path, required=True,
                         help="SFT checkpoint to load actor weights from")
     parser.add_argument("--output", type=Path, required=True)
-    parser.add_argument("--epochs", type=int, default=80)
+    parser.add_argument("--epochs", type=int, default=30)
     parser.add_argument("--batch-size", type=int, default=512)
-    parser.add_argument("--lr", type=float, default=5e-4)
+    parser.add_argument("--lr", type=float, default=1e-3)
     parser.add_argument("--gamma", type=float, default=0.995)
-    parser.add_argument("--score-bucket-weight", type=float, default=0.1,
+    parser.add_argument("--score-bucket-weight", type=float, default=0.0,
                         help="Weight for auxiliary score bucket classification loss")
     parser.add_argument("--policy-id", default=None,
                         help="Only train on this policy's data")

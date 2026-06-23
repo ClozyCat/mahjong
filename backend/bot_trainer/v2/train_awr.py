@@ -33,6 +33,9 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--adv-norm", default="per_match",
                         choices=["none", "per_match", "per_player", "batch"],
                         help="Advantage normalization mode")
+    parser.add_argument("--adv-source", default="terminal",
+                        choices=["value", "terminal"],
+                        help="value = return - V(s); terminal = terminal_reward only (no value head needed)")
     parser.add_argument("--head-weights", default="1.0,3.0,5.0,5.0",
                         help="Comma-separated weights for discard,claim,self_kong,hu")
     parser.add_argument("--kl-coef", type=float, default=0.01,
@@ -83,13 +86,24 @@ def advantage_weights(
     returns: torch.Tensor,
     values: torch.Tensor,
     precomputed_advantage: torch.Tensor | None,
+    terminal_reward: torch.Tensor | None = None,
     *,
     adv_norm: str,
+    adv_source: str = "value",
     temperature: float,
     weight_clip: float,
     policy_filter: str,
 ) -> tuple[torch.Tensor, torch.Tensor]:
-    if precomputed_advantage is not None and adv_norm in ("per_match", "per_player"):
+    if adv_source == "terminal" and terminal_reward is not None:
+        advantage = terminal_reward.float()
+        if adv_norm == "batch":
+            adv_mean = advantage.mean()
+            adv_std = advantage.std(unbiased=False) + 1e-8
+            advantage = (advantage - adv_mean) / adv_std
+            advantage = advantage.clamp(-5.0, 5.0)
+        elif adv_norm == "none":
+            advantage = advantage.clamp(-5.0, 5.0)
+    elif precomputed_advantage is not None and adv_norm in ("per_match", "per_player"):
         advantage = precomputed_advantage.float()
     else:
         advantage = returns - values.detach()
@@ -197,14 +211,16 @@ def main() -> None:
 
             value = outputs["value"].squeeze(-1)
             returns = batch["return"].float()
-            value_loss = F.mse_loss(value, returns)
+            value_loss = F.mse_loss(value, returns) if args.adv_source == "value" else torch.tensor(0.0, device=device)
 
             with torch.no_grad():
                 weights, _advantage = advantage_weights(
                     returns,
                     value,
                     batch.get("advantage"),
+                    terminal_reward=batch.get("terminal_reward"),
                     adv_norm=args.adv_norm,
+                    adv_source=args.adv_source,
                     temperature=args.temperature,
                     weight_clip=args.weight_clip,
                     policy_filter=args.policy_filter,
