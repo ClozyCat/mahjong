@@ -84,11 +84,9 @@ def test_load_metadata_rejects_old_schema_with_export_hint(tmp_path: Path) -> No
         load_metadata(metadata_path)
 
 
-def test_sft_wrappers_forward_auxiliary_training_flags() -> None:
+def test_sft_pipeline_forwards_auxiliary_training_flags() -> None:
     script_dir = Path(__file__).parent
-    powershell = (script_dir / "train_and_export_model.ps1").read_text(encoding="utf-8")
-    bash_script = script_dir / "train_and_export_model.sh"
-    bash = bash_script.read_text(encoding="utf-8") if bash_script.exists() else ""
+    pipeline = (script_dir / "run_sft_pipeline.py").read_text(encoding="utf-8")
 
     required_flags = [
         "--fan-loss-weight",
@@ -105,35 +103,28 @@ def test_sft_wrappers_forward_auxiliary_training_flags() -> None:
     ]
 
     for flag in required_flags:
-        assert flag in powershell
-        if bash:
-            assert flag in bash
-    assert "[double]$LearningRate = 0.0003" in powershell
-    assert "[double]$LrMin = 0.00001" in powershell
-    assert "[switch]$Amp" in powershell or "[switch]$NoAmp" in powershell
-    assert "if ($NoAmp)" in powershell
-    assert "[switch]$NoTf32" in powershell
-    assert "--no-tf32" in powershell
-    if bash:
-        assert "LEARNING_RATE=0.0003" in bash
-        assert "USE_AMP=1" in bash or "--no-amp" in bash
-        assert "USE_TF32=1" in bash
-    assert "[double]$ValueLossWeight = 0.75" in powershell
-    assert "[double]$RiskLossWeight = 1.0" in powershell
-    assert 'Write-Host "Batch size:  $BatchSize"' in powershell
-    assert "optimized: 4096->512" not in powershell
+        assert flag in pipeline
+    assert 'parser.add_argument("--lr", type=float, default=0.0003)' in pipeline
+    assert 'parser.add_argument("--lr-min", type=float, default=0.00001)' in pipeline
+    assert 'parser.add_argument("--amp", dest="amp", action="store_true", default=None)' in pipeline
+    assert 'parser.add_argument("--no-amp", dest="amp", action="store_false")' in pipeline
+    assert 'parser.add_argument("--no-tf32", action="store_true")' in pipeline
+    assert 'parser.add_argument("--value-loss-weight", type=float, default=0.75)' in pipeline
+    assert 'parser.add_argument("--risk-loss-weight", type=float, default=1.0)' in pipeline
+    assert "Existing dataset found" in pipeline
+    assert "skip_export_dataset" in pipeline
     assert (
-        "Architecture: Lightweight actor + suit-fusion tile CNN + GRU discard "
-        "sequence + opponent modeling"
-    ) in powershell
-    assert "Transformer encoder" not in powershell
-    assert (
-        "Loss weights: value=$ValueLossWeight fan=$FanLossWeight "
-        "qfan=$QualifyingFanLossWeight opponent=$RiskLossWeight"
-    ) in powershell
-    assert "Risk pos weight:" not in powershell
-    assert "MAHJONG_BOT_MODEL_PATH" in powershell
-    assert "Resolve-Path -LiteralPath $OnnxOutput" in powershell
+        '"cargo",\n'
+        '        "run",\n'
+        '        "--release",\n'
+        '        "--manifest-path",\n'
+        '        "backend/Cargo.toml",\n'
+        '        "--bin",\n'
+        '        "export_bot_dataset_v2"'
+    ) in pipeline
+    assert "Transformer encoder" not in pipeline
+    assert "MAHJONG_BOT_MODEL_PATH" in pipeline
+    assert "bot::neural::tests::runs_local_onnx_model_when_available" in pipeline
 
 
 def test_sft_training_defaults_to_bf16_amp_without_grad_scaling(monkeypatch: pytest.MonkeyPatch) -> None:
