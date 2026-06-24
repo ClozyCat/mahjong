@@ -25,6 +25,10 @@ from awr_dataset import (
 )
 from arena_summary import paired_subject_deltas
 from train_value import BestValueCheckpoint
+from candidate_bank import CandidateRecord, CandidateBank, select_best_candidate
+from bucket_report import bucket_key, summarize_buckets
+from counterfactual_dataset import CounterfactualDiscardDataset
+from train_discard_ranker import compute_ranker_loss, ranker_metrics
 
 
 def make_sample_row(**overrides) -> dict:
@@ -392,6 +396,30 @@ class TestAwrExportValueHead:
 
 
 class TestCandidateGatePairedSubjects:
+    def test_selection_gate_accepts_weighted_positive_candidate_with_paired_warning(self):
+        summary = make_gate_summary(
+            baseline=make_policy_summary(avg_score_delta=0.0, win_rate=3.0, deal_in_rate=2.0),
+            candidate=make_policy_summary(avg_score_delta=8.0, win_rate=3.1, deal_in_rate=2.0),
+            paired={
+                "baseline_neural__vs__awr_candidate_neural": {
+                    "baseline_policy": "baseline_neural",
+                    "candidate_policy": "awr_candidate_neural",
+                    "paired_match_count": 80,
+                    "avg_score_delta": 8.0,
+                    "confidence95_low": -4.0,
+                    "confidence95_high": 20.0,
+                }
+            },
+        )
+
+        selection = evaluate_candidate_matrix([summary], pool_path=None, gate_mode="selection")
+        promotion = evaluate_candidate_matrix([summary], pool_path=None, gate_mode="promotion")
+
+        assert selection["accepted"] is True
+        assert selection["selection_failures"] == []
+        assert promotion["accepted"] is False
+        assert "paired_confidence" in promotion["all_failures"]
+
     def test_uses_reverse_paired_key_with_candidate_oriented_delta(self):
         summary = {
             "policies": {
@@ -529,3 +557,175 @@ class TestBestValueCheckpoint:
         tracker.update(epoch=3, train_ev=0.3, val_ev=-0.1)
 
         assert tracker.should_stop is True
+
+
+class TestCandidateBank:
+    def test_selects_best_candidate_by_weighted_score_then_safety(self):
+        bank = CandidateBank()
+        weak = CandidateRecord(
+            iter=0,
+            checkpoint="iter_0/awr_best.pt",
+            onnx="iter_0/awr.onnx",
+            gate_result={
+                "weighted_metrics": {
+                    "avg_score_delta": 2.0,
+                    "win_rate": 0.1,
+                    "deal_in_rate": 0.0,
+                }
+            },
+            selected=True,
+            promoted=False,
+        )
+        strong = CandidateRecord(
+            iter=1,
+            checkpoint="iter_1/awr_best.pt",
+            onnx="iter_1/awr.onnx",
+            gate_result={
+                "weighted_metrics": {
+                    "avg_score_delta": 5.0,
+                    "win_rate": 0.0,
+                    "deal_in_rate": 0.1,
+                }
+            },
+            selected=True,
+            promoted=False,
+        )
+
+        bank.add(weak)
+        bank.add(strong)
+
+        assert select_best_candidate(bank).iter == 1
+
+
+class TestBucketReport:
+    def test_summarizes_trajectory_rows_by_phase_and_action_head(self):
+        rows = [
+            make_sample_row(
+                policy_id="learner",
+                action_head="discard",
+                phase_bucket="late",
+                risk_bucket="high",
+                reward=-1.0,
+            ),
+            make_sample_row(
+                policy_id="learner",
+                action_head="discard",
+                phase_bucket="late",
+                risk_bucket="high",
+                reward=1.0,
+            ),
+            make_sample_row(
+                policy_id="learner",
+                action_head="claim",
+                phase_bucket="early",
+                risk_bucket="low",
+                reward=0.5,
+            ),
+        ]
+
+        summary = summarize_buckets(rows)
+
+        assert bucket_key(rows[0]) == "late/high/discard"
+        assert summary["learner"]["late/high/discard"]["count"] == 2
+        assert summary["learner"]["late/high/discard"]["avg_reward"] == pytest.approx(0.0)
+        assert summary["learner"]["early/low/claim"]["count"] == 1
+
+
+class TestCounterfactualDiscardDataset:
+    def test_loads_counterfactual_discard_rows(self):
+        row = {
+            "schema_version": 1,
+            "match_id": "m1",
+            "decision_index": 1,
+            "seat_index": 0,
+            "tile_planes": [0.0] * 340,
+            "scalar_features": [0.0] * 13,
+            "discard_sequence": [0.0] * 1280,
+            "discard_mask": [True] * 34,
+            "legal_discards": [0, 3, 5],
+            "teacher_scores": [0.1, 0.5, -0.2],
+            "teacher_best_index": 3,
+            "phase_bucket": "mid",
+            "risk_bucket": "low",
+        }
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "cf.jsonl"
+            write_jsonl([row], path)
+
+            ds = CounterfactualDiscardDataset(path)
+            item = ds[0]
+
+        assert len(ds) == 1
+        assert item["tile_planes"].shape == (10, 34)
+        assert item["legal_mask"].sum().item() == 3
+        assert item["teacher_scores"][3].item() == pytest.approx(0.5)
+        assert item["teacher_best_index"].item() == 3
+
+    def test_filters_by_policy_id(self):
+        learner = {
+            "schema_version": 1,
+            "policy_id": "learner",
+            "tile_planes": [0.0] * 340,
+            "scalar_features": [0.0] * 13,
+            "discard_sequence": [0.0] * 1280,
+            "discard_mask": [True] * 34,
+            "legal_discards": [0],
+            "teacher_scores": [1.0],
+            "teacher_best_index": 0,
+        }
+        opponent = {**learner, "policy_id": "opponent"}
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "cf.jsonl"
+            write_jsonl([opponent, learner], path)
+
+            ds = CounterfactualDiscardDataset(path, policy_id="learner")
+
+        assert len(ds) == 1
+
+
+class TestDiscardRanker:
+    def test_loss_masks_illegal_teacher_scores(self):
+        outputs = {
+            "discard_logits": torch.tensor([[3.0, 4.0, 0.0]], dtype=torch.float32),
+        }
+        changed_illegal_outputs = {
+            "discard_logits": torch.tensor([[3.0, -99.0, 0.0]], dtype=torch.float32),
+        }
+        batch = {
+            "legal_mask": torch.tensor([[True, False, True]]),
+            "teacher_scores": torch.tensor([[3.0, -1000.0, 0.0]], dtype=torch.float32),
+            "teacher_best_index": torch.tensor([0]),
+        }
+
+        loss = compute_ranker_loss(outputs, batch, temperature=1.0, top1_weight=0.0)
+        changed_illegal_loss = compute_ranker_loss(
+            changed_illegal_outputs,
+            batch,
+            temperature=1.0,
+            top1_weight=0.0,
+        )
+
+        assert torch.isfinite(loss)
+        assert loss.item() < 0.1
+        assert changed_illegal_loss.item() == pytest.approx(loss.item())
+
+    def test_metrics_compare_masked_top1(self):
+        outputs = {
+            "discard_logits": torch.tensor(
+                [[0.0, 9.0, 2.0], [5.0, 0.0, 2.0]],
+                dtype=torch.float32,
+            ),
+        }
+        batch = {
+            "legal_mask": torch.tensor([[True, False, True], [False, True, True]]),
+            "teacher_scores": torch.tensor(
+                [[0.0, -1000.0, 2.0], [-1000.0, 0.0, 2.0]],
+                dtype=torch.float32,
+            ),
+            "teacher_best_index": torch.tensor([2, 2]),
+        }
+
+        metrics = ranker_metrics(outputs, batch)
+
+        assert metrics["top1"] == pytest.approx(1.0)
+        assert metrics["target_margin"] == pytest.approx(2.0)

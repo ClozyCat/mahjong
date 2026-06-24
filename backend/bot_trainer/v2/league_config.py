@@ -64,6 +64,25 @@ def weighted_sample(
     return chosen
 
 
+def weighted_sample_diverse(
+    pool: list[dict[str, Any]],
+    count: int,
+    rng: random.Random,
+) -> list[dict[str, Any]]:
+    """Sample with weighted diversity first, then weighted replacement if needed."""
+    if not pool:
+        return []
+    remaining = list(pool)
+    chosen: list[dict[str, Any]] = []
+    while remaining and len(chosen) < count:
+        picked = weighted_sample(remaining, 1, rng)[0]
+        chosen.append(picked)
+        remaining = [item for item in remaining if item is not picked]
+    if len(chosen) < count:
+        chosen.extend(weighted_sample(pool, count - len(chosen), rng))
+    return chosen
+
+
 def default_neural_opponents(
     model_path: Path | str,
     *,
@@ -116,7 +135,7 @@ def build_trajectory_configs(
         chunk_seed = seed + chunk_index * 1000
         match_rng = random.Random(chunk_seed + 1)
         if opponents_pool:
-            chosen = weighted_sample(opponents_pool, 3, match_rng)
+            chosen = weighted_sample_diverse(opponents_pool, 3, match_rng)
             opponents = [clean_policy(o) for o in chosen]
         else:
             opponents = [clean_policy(learner) for _ in range(3)]

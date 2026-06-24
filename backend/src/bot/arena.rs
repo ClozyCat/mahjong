@@ -160,6 +160,13 @@ pub struct ArenaTrajectoryRow {
     pub reward: f32,
     pub step_reward: f32,
     pub terminal_reward: f32,
+    pub turn_index: u32,
+    pub wall_remaining: u32,
+    pub phase_bucket: String,
+    pub is_dealer: bool,
+    pub is_tenpai: bool,
+    pub risk_bucket: String,
+    pub hand_bucket: String,
     pub shanten_before: Option<i32>,
     pub shanten_after: Option<i32>,
     pub risk_probs: Vec<f32>,
@@ -171,15 +178,35 @@ pub struct ArenaTrajectoryRow {
     pub done: bool,
 }
 
+#[derive(Clone, Debug, Deserialize, Serialize)]
+pub struct CounterfactualDiscardRow {
+    pub schema_version: u32,
+    pub match_id: String,
+    pub decision_index: u64,
+    pub seat_index: usize,
+    pub policy_id: String,
+    pub tile_planes: Vec<f32>,
+    pub scalar_features: Vec<f32>,
+    pub discard_sequence: Vec<f32>,
+    pub discard_mask: Vec<bool>,
+    pub legal_discards: Vec<usize>,
+    pub teacher_scores: Vec<f32>,
+    pub teacher_best_index: usize,
+    pub phase_bucket: String,
+    pub risk_bucket: String,
+}
+
 #[derive(Clone, Debug, Default)]
 pub struct ArenaRunOutput {
     pub reports: Vec<ArenaMatchReport>,
     pub trajectories: Vec<ArenaTrajectoryRow>,
+    pub counterfactual_discards: Vec<CounterfactualDiscardRow>,
 }
 
 struct ArenaCompletedMatch {
     report: ArenaMatchReport,
     trajectories: Vec<ArenaTrajectoryRow>,
+    counterfactual_discards: Vec<CounterfactualDiscardRow>,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -370,6 +397,15 @@ pub fn run_evaluation_arena_with_jobs(
     include_trajectories: bool,
     worker_count: usize,
 ) -> Result<ArenaRunOutput, String> {
+    run_evaluation_arena_with_options(config, include_trajectories, false, worker_count)
+}
+
+pub fn run_evaluation_arena_with_options(
+    config: &crate::evaluation::EvaluationArenaConfig,
+    include_trajectories: bool,
+    include_counterfactual_discards: bool,
+    worker_count: usize,
+) -> Result<ArenaRunOutput, String> {
     config.validate()?;
     validate_evaluation_policy_models(config)?;
 
@@ -378,9 +414,20 @@ pub fn run_evaluation_arena_with_jobs(
         return Ok(ArenaRunOutput::default());
     }
     if worker_count <= 1 || replicas.len() == 1 {
-        return run_evaluation_replicas_serial(config, include_trajectories, &replicas);
+        return run_evaluation_replicas_serial(
+            config,
+            include_trajectories,
+            include_counterfactual_discards,
+            &replicas,
+        );
     }
-    run_evaluation_replicas_parallel(config, include_trajectories, &replicas, worker_count)
+    run_evaluation_replicas_parallel(
+        config,
+        include_trajectories,
+        include_counterfactual_discards,
+        &replicas,
+        worker_count,
+    )
 }
 
 fn evaluation_replica_specs(
@@ -403,6 +450,7 @@ fn evaluation_replica_specs(
 fn run_evaluation_replicas_serial(
     config: &crate::evaluation::EvaluationArenaConfig,
     include_trajectories: bool,
+    include_counterfactual_discards: bool,
     replicas: &[EvaluationReplicaSpec],
 ) -> Result<ArenaRunOutput, String> {
     let mut output = ArenaRunOutput::default();
@@ -418,8 +466,12 @@ fn run_evaluation_replicas_serial(
             replica.match_index,
             replica.seed,
             include_trajectories,
+            include_counterfactual_discards,
         )?;
         output.trajectories.extend(completed_match.trajectories);
+        output
+            .counterfactual_discards
+            .extend(completed_match.counterfactual_discards);
         output.reports.push(completed_match.report);
     }
     Ok(output)
@@ -428,6 +480,7 @@ fn run_evaluation_replicas_serial(
 fn run_evaluation_replicas_parallel(
     config: &crate::evaluation::EvaluationArenaConfig,
     include_trajectories: bool,
+    include_counterfactual_discards: bool,
     replicas: &[EvaluationReplicaSpec],
     worker_count: usize,
 ) -> Result<ArenaRunOutput, String> {
@@ -465,6 +518,7 @@ fn run_evaluation_replicas_parallel(
                         replica.match_index,
                         replica.seed,
                         include_trajectories,
+                        include_counterfactual_discards,
                     )
                     .map(|completed_match| (replica_offset, completed_match));
                     if result.is_err() {
@@ -498,8 +552,12 @@ fn run_evaluation_replicas_parallel(
                 .map(|(_, completed_match)| completed_match.report.clone())
                 .collect(),
             trajectories: completed
+                .iter()
+                .flat_map(|(_, completed_match)| completed_match.trajectories.clone())
+                .collect(),
+            counterfactual_discards: completed
                 .into_iter()
-                .flat_map(|(_, completed_match)| completed_match.trajectories)
+                .flat_map(|(_, completed_match)| completed_match.counterfactual_discards)
                 .collect(),
         })
     })
@@ -512,6 +570,7 @@ fn run_evaluation_arena_match(
     match_index: usize,
     seed: u64,
     include_trajectories: bool,
+    include_counterfactual_discards: bool,
 ) -> Result<ArenaCompletedMatch, String> {
     let match_id = format!("evaluation-{seed}-{replica_index}");
     let mut room = arena_room(&format!("EVAL{replica_index:04}"));
@@ -525,6 +584,7 @@ fn run_evaluation_arena_match(
     let mut accumulator = ArenaMatchAccumulator::new_with_policies(&initial_policies);
     let mut action_count = 0_usize;
     let mut trajectories = Vec::new();
+    let mut counterfactual_discards = Vec::new();
     let mut rollout_rng = StdRng::seed_from_u64(seed ^ 0xA17E_5EED);
     let mut timing_inference_ns = 0_u128;
     let mut timing_game_ns = 0_u128;
@@ -612,6 +672,22 @@ fn run_evaluation_arena_match(
                         trajectories.push(row);
                     }
                 }
+                if let (true, Some(trace)) = (include_counterfactual_discards, trace.as_ref()) {
+                    let policy = evaluation_policy_for_current_seat(
+                        &room,
+                        subject,
+                        &config.opponents,
+                        action_seat,
+                    );
+                    if let Some(row) = counterfactual_discard_row_from_trace(
+                        &match_id,
+                        counterfactual_discards.len() as u64,
+                        &policy,
+                        trace,
+                    ) {
+                        counterfactual_discards.push(row);
+                    }
+                }
                 timing_trajectory_ns += _traj_start.elapsed().as_nanos();
                 action_count += 1;
             }
@@ -677,6 +753,7 @@ fn run_evaluation_arena_match(
     Ok(ArenaCompletedMatch {
         report,
         trajectories,
+        counterfactual_discards,
     })
 }
 
@@ -856,6 +933,17 @@ fn trajectory_row_from_trace_with_state(
         reward: 0.0,
         step_reward: 0.0,
         terminal_reward: 0.0,
+        turn_index: turn_index_from_context(&trace.context),
+        wall_remaining: wall_remaining_from_context(&trace.context),
+        phase_bucket: phase_bucket_for_wall(trace.context.wall_tiles_remaining),
+        is_dealer: trace.context.seat_index == trace.context.dealer_seat,
+        is_tenpai: context_is_tenpai(&trace.context),
+        risk_bucket: trace
+            .neural_scores
+            .as_ref()
+            .map(risk_bucket_for_scores)
+            .unwrap_or_else(|| "low".to_string()),
+        hand_bucket: hand_bucket_from_context(&trace.context),
         shanten_before: None,
         shanten_after: None,
         risk_probs: vec![],
@@ -866,6 +954,113 @@ fn trajectory_row_from_trace_with_state(
         global_scalar_features: None,
         done: false,
     })
+}
+
+fn counterfactual_discard_row_from_trace(
+    match_id: &str,
+    decision_index: u64,
+    policy: &ArenaBotPolicyConfig,
+    trace: &crate::rules::standard::automation::BotDecisionTrace,
+) -> Option<CounterfactualDiscardRow> {
+    if trace.decision_kind != "active_turn" || trace.action.action_type != "discard" {
+        return None;
+    }
+    let features = trace
+        .features
+        .clone()
+        .unwrap_or_else(|| encode_bot_context_v2(&trace.context));
+    let scores = trace.neural_scores.as_ref()?;
+    let risk_config = super::policy::RiskConfig::from_arena_config(policy);
+    let logits = risk_adjusted_discard_logits(scores, Some(&risk_config));
+    let mut legal_discards = Vec::new();
+    let mut teacher_scores = Vec::new();
+    for (index, allowed) in features.discard_mask.iter().enumerate() {
+        if *allowed && logits[index].is_finite() {
+            legal_discards.push(index);
+            teacher_scores.push(logits[index]);
+        }
+    }
+    if legal_discards.is_empty() {
+        return None;
+    }
+    let best_offset = teacher_scores
+        .iter()
+        .enumerate()
+        .max_by(|(_, left), (_, right)| left.total_cmp(right))?
+        .0;
+    Some(CounterfactualDiscardRow {
+        schema_version: 1,
+        match_id: match_id.to_string(),
+        decision_index,
+        seat_index: trace.action.seat_index,
+        policy_id: policy.id.clone(),
+        tile_planes: features.tile_planes,
+        scalar_features: features.scalar_features,
+        discard_sequence: features.discard_sequence,
+        discard_mask: features.discard_mask.to_vec(),
+        legal_discards: legal_discards.clone(),
+        teacher_scores,
+        teacher_best_index: legal_discards[best_offset],
+        phase_bucket: phase_bucket_for_wall(trace.context.wall_tiles_remaining),
+        risk_bucket: risk_bucket_for_scores(scores),
+    })
+}
+
+fn turn_index_from_context(context: &BotContext) -> u32 {
+    context
+        .discard_history
+        .len()
+        .try_into()
+        .unwrap_or(u32::MAX)
+}
+
+fn wall_remaining_from_context(context: &BotContext) -> u32 {
+    context.wall_tiles_remaining.max(0).try_into().unwrap_or(0)
+}
+
+fn context_is_tenpai(context: &BotContext) -> bool {
+    let concealed_tile_keys = context
+        .player
+        .concealed_tiles
+        .iter()
+        .map(|tile| tile.tile_key.clone())
+        .collect::<Vec<_>>();
+    is_tenpai_hand_with_melds(&concealed_tile_keys, &context.player.meld_tile_key_groups)
+}
+
+fn hand_bucket_from_context(context: &BotContext) -> String {
+    if context.player.meld_tile_key_groups.is_empty() {
+        "closed"
+    } else {
+        "open"
+    }
+    .to_string()
+}
+
+fn phase_bucket_for_wall(wall_remaining: i64) -> String {
+    match wall_remaining {
+        50..=i64::MAX => "early",
+        25..=49 => "mid",
+        10..=24 => "late",
+        _ => "end",
+    }
+    .to_string()
+}
+
+fn risk_bucket_for_scores(scores: &NeuralDecisionScores) -> String {
+    let max_risk = scores
+        .risk_logits
+        .iter()
+        .filter_map(|logit| sigmoid_probability(*logit))
+        .fold(0.0_f32, f32::max);
+    if max_risk >= 0.60 {
+        "high"
+    } else if max_risk >= 0.30 {
+        "medium"
+    } else {
+        "low"
+    }
+    .to_string()
 }
 
 #[cfg(test)]
@@ -913,6 +1108,13 @@ fn trajectory_row_from_trace(
         reward: 0.0,
         step_reward: 0.0,
         terminal_reward: 0.0,
+        turn_index: 0,
+        wall_remaining: 0,
+        phase_bucket: "unknown".to_string(),
+        is_dealer: false,
+        is_tenpai: false,
+        risk_bucket: "low".to_string(),
+        hand_bucket: "closed".to_string(),
         shanten_before: None,
         shanten_after: None,
         risk_probs: vec![],
@@ -923,6 +1125,19 @@ fn trajectory_row_from_trace(
         global_scalar_features: None,
         done: false,
     })
+}
+
+fn sigmoid_probability(logit: f32) -> Option<f32> {
+    if !logit.is_finite() {
+        return None;
+    }
+    if logit >= 0.0 {
+        let z = (-logit).exp();
+        Some(1.0 / (1.0 + z))
+    } else {
+        let z = logit.exp();
+        Some(z / (1.0 + z))
+    }
 }
 
 fn apply_shaping_reward(
@@ -1572,6 +1787,13 @@ mod tests {
             reward: 0.0,
             step_reward: 0.0,
             terminal_reward: 0.0,
+            turn_index: 0,
+            wall_remaining: 0,
+            phase_bucket: "unknown".to_string(),
+            is_dealer: false,
+            is_tenpai: false,
+            risk_bucket: "low".to_string(),
+            hand_bucket: "closed".to_string(),
             shanten_before: None,
             shanten_after: None,
             risk_probs: vec![0.0; TILE_KIND_COUNT],
@@ -1586,6 +1808,8 @@ mod tests {
         let value = serde_json::to_value(row).expect("row");
 
         assert_eq!(value["schema_version"], 1);
+        assert_eq!(value["phase_bucket"], "unknown");
+        assert_eq!(value["risk_bucket"], "low");
         assert_eq!(value["action_head"], "discard");
         assert_eq!(
             value["discard_mask"].as_array().expect("mask").len(),
@@ -1692,6 +1916,100 @@ mod tests {
         assert_eq!(row.tile_planes[0], marker);
         assert_eq!(row.scalar_features[0], marker);
         assert_eq!(row.discard_sequence[0], marker);
+    }
+
+    #[test]
+    fn trajectory_row_exports_context_buckets() {
+        let mut context = bot_context_for_discards(&["w1", "w2"]);
+        context.wall_tiles_remaining = 42;
+        context.discard_history = vec![crate::projection::bot_view::BotDiscardEventView {
+            seat_index: 1,
+            tile_key: "w9".to_string(),
+        }];
+        let trace = BotDecisionTrace {
+            decision_kind: "active_turn".to_string(),
+            action: BotAction {
+                seat_index: 0,
+                action_type: "discard".to_string(),
+                tile_ids: vec!["w1-0".to_string()],
+            },
+            context,
+            features: None,
+            telemetry: crate::bot::policy::BotPolicyDecisionTelemetry::default(),
+            neural_scores: Some(NeuralDecisionScores {
+                discard_logits: [0.0; TILE_KIND_COUNT],
+                claim_logits: [0.0; CLAIM_ACTION_COUNT],
+                self_kong_logits: [0.0; SELF_KONG_ACTION_COUNT],
+                hu_logits: [0.0; 2],
+                value_for_risk: 0.0,
+                qualifying_fan_value: 0.0,
+                risk_logits: [0.0; TILE_KIND_COUNT],
+            }),
+        };
+        let row = trajectory_row_from_trace_with_state(
+            "arena-test",
+            0,
+            &test_policy("learner"),
+            &trace,
+            &RoomState::default(),
+        )
+        .expect("row");
+
+        assert_eq!(row.turn_index, 1);
+        assert_eq!(row.wall_remaining, 42);
+        assert_eq!(row.phase_bucket, "mid");
+        assert_eq!(row.risk_bucket, "medium");
+        assert!(row.is_dealer);
+        assert_eq!(row.hand_bucket, "closed");
+    }
+
+    #[test]
+    fn counterfactual_discard_row_exports_legal_scores() {
+        let context = bot_context_for_discards(&["w1", "w2", "t1"]);
+        let w1_index = tile_index("w1").expect("w1 index");
+        let w2_index = tile_index("w2").expect("w2 index");
+        let t1_index = tile_index("t1").expect("t1 index");
+        let mut discard_logits = [-100.0_f32; TILE_KIND_COUNT];
+        discard_logits[w1_index] = 0.1;
+        discard_logits[w2_index] = 1.2;
+        discard_logits[t1_index] = 0.4;
+        let trace = BotDecisionTrace {
+            decision_kind: "active_turn".to_string(),
+            action: BotAction {
+                seat_index: 0,
+                action_type: "discard".to_string(),
+                tile_ids: vec!["w2-1".to_string()],
+            },
+            context,
+            features: None,
+            telemetry: crate::bot::policy::BotPolicyDecisionTelemetry::default(),
+            neural_scores: Some(NeuralDecisionScores {
+                discard_logits,
+                claim_logits: [0.0; CLAIM_ACTION_COUNT],
+                self_kong_logits: [0.0; SELF_KONG_ACTION_COUNT],
+                hu_logits: [0.0; 2],
+                value_for_risk: 0.0,
+                qualifying_fan_value: 0.0,
+                risk_logits: [-5.0; TILE_KIND_COUNT],
+            }),
+        };
+        let policy = test_policy("learner");
+
+        let row =
+            counterfactual_discard_row_from_trace("arena-test", 7, &policy, &trace).expect("row");
+
+        assert_eq!(row.schema_version, 1);
+        assert_eq!(row.decision_index, 7);
+        assert_eq!(row.legal_discards, vec![w1_index, w2_index, t1_index]);
+        assert_eq!(row.teacher_best_index, w2_index);
+        assert_eq!(row.teacher_scores.len(), row.legal_discards.len());
+        assert_eq!(row.tile_planes.len(), 10 * TILE_KIND_COUNT);
+        assert_eq!(row.discard_sequence.len(), 32 * 40);
+        assert_eq!(row.risk_bucket, "low");
+
+        let value = serde_json::to_value(row).expect("row json");
+        assert_eq!(value["legal_discards"].as_array().expect("legal").len(), 3);
+        assert_eq!(value["teacher_best_index"], w2_index);
     }
 
     #[test]
@@ -1850,6 +2168,13 @@ mod tests {
             reward: step_reward,
             step_reward,
             terminal_reward: 0.0,
+            turn_index: 0,
+            wall_remaining: 0,
+            phase_bucket: "unknown".to_string(),
+            is_dealer: false,
+            is_tenpai: false,
+            risk_bucket: "low".to_string(),
+            hand_bucket: "closed".to_string(),
             shanten_before: None,
             shanten_after: None,
             risk_probs: vec![0.0; TILE_KIND_COUNT],

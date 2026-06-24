@@ -20,6 +20,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--candidate-policy", default="awr_candidate_neural")
     parser.add_argument("--pool", type=Path, default=None,
                         help="opponent_pool.json for weighted averaging")
+    parser.add_argument("--gate-mode", choices=["selection", "promotion"], default="promotion")
     parser.add_argument("--output", type=Path, default=None)
     return parser.parse_args()
 
@@ -328,6 +329,7 @@ def evaluate_candidate_matrix(
     pool_path: Path | None,
     baseline_policy: str = "baseline_neural",
     candidate_policy: str = "awr_candidate_neural",
+    gate_mode: str = "promotion",
 ) -> dict[str, Any]:
     if pool_path is not None:
         pool = json.loads(pool_path.read_text(encoding="utf-8-sig"))
@@ -342,6 +344,7 @@ def evaluate_candidate_matrix(
     total_weight = 0.0
     weighted_metrics: dict[str, float] = defaultdict(float)
     all_failures: set[str] = set()
+    latency_failures = 0
 
     for i, (summary, opp) in enumerate(zip(summaries, opponents, strict=True)):
         result = evaluate_candidate(summary, baseline_policy, candidate_policy)
@@ -357,20 +360,35 @@ def evaluate_candidate_matrix(
         total_weight += w
         if not result["accepted"]:
             all_failures.update(result["failures"])
+        if "latency" in result["failures"]:
+            latency_failures += 1
 
     for key in weighted_metrics:
         weighted_metrics[key] /= total_weight if total_weight > 0 else 1.0
 
-    accepted = (
+    selection_failures: list[str] = []
+    if weighted_metrics.get("avg_score_delta", -1.0) <= 0.0:
+        selection_failures.append("avg_score_delta")
+    if weighted_metrics.get("win_rate", -1.0) < -0.05:
+        selection_failures.append("win_rate")
+    if weighted_metrics.get("deal_in_rate", -1.0) < -0.05:
+        selection_failures.append("deal_in_rate")
+    if latency_failures:
+        selection_failures.append("latency")
+
+    promotion_accepted = (
         weighted_metrics.get("avg_score_delta", -1.0) > 0
         and weighted_metrics.get("win_rate", -1.0) >= 0
         and weighted_metrics.get("deal_in_rate", -1.0) >= 0
         and not all_failures
     )
+    accepted = not selection_failures if gate_mode == "selection" else promotion_accepted
 
     return {
         "accepted": accepted,
+        "gate_mode": gate_mode,
         "weighted_metrics": dict(weighted_metrics),
+        "selection_failures": selection_failures,
         "per_opponent": per_opponent,
         "all_failures": sorted(all_failures),
     }
@@ -386,6 +404,7 @@ def main() -> None:
         result = evaluate_candidate_matrix(
             summaries, args.pool,
             args.baseline_policy, args.candidate_policy,
+            args.gate_mode,
         )
     else:
         result = evaluate_candidate(
