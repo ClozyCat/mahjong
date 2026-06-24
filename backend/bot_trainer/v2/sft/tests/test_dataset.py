@@ -85,7 +85,7 @@ def test_load_metadata_rejects_old_schema_with_export_hint(tmp_path: Path) -> No
 
 
 def test_sft_pipeline_forwards_auxiliary_training_flags() -> None:
-    script_dir = Path(__file__).parent
+    script_dir = Path(__file__).resolve().parents[1]
     pipeline = (script_dir / "run_sft_pipeline.py").read_text(encoding="utf-8")
 
     required_flags = [
@@ -139,9 +139,9 @@ def test_sft_training_defaults_to_bf16_amp_without_grad_scaling(monkeypatch: pyt
         [
             "train.py",
             "--data",
-            "backend/bot_trainer/v2/out",
+            "backend/bot_trainer/v2/sft/out",
             "--output",
-            "backend/bot_trainer/v2/checkpoints",
+            "backend/bot_trainer/v2/sft/checkpoints",
         ],
     )
 
@@ -162,9 +162,9 @@ def test_sft_training_defaults_to_bf16_amp_without_grad_scaling(monkeypatch: pyt
         [
             "train.py",
             "--data",
-            "backend/bot_trainer/v2/out",
+            "backend/bot_trainer/v2/sft/out",
             "--output",
-            "backend/bot_trainer/v2/checkpoints",
+            "backend/bot_trainer/v2/sft/checkpoints",
             "--no-amp",
         ],
     )

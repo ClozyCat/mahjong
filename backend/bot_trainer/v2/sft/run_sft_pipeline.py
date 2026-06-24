@@ -12,8 +12,8 @@ from pathlib import Path
 
 EXPECTED_METADATA_SCHEMA_VERSION = 6
 DEFAULT_INPUT_PATH = "backend/bot_trainer/datasets/data.txt"
-DEFAULT_DATA_DIR = "backend/bot_trainer/v2/out"
-DEFAULT_CHECKPOINT_DIR = "backend/bot_trainer/v2/checkpoints"
+DEFAULT_DATA_DIR = "backend/bot_trainer/v2/sft/out"
+DEFAULT_CHECKPOINT_DIR = "backend/bot_trainer/v2/sft/checkpoints"
 DEFAULT_ONNX_OUTPUT = "backend/assets/sft/sft.onnx"
 
 
@@ -25,7 +25,7 @@ class DatasetStatus:
 
 
 def repo_root() -> Path:
-    return Path(__file__).resolve().parents[3]
+    return Path(__file__).resolve().parents[4]
 
 
 def dataset_status(data_dir: Path) -> DatasetStatus:
@@ -214,7 +214,7 @@ def run_tests(args: argparse.Namespace, root: Path, env: dict[str, str]) -> None
             args.python_exe,
             "-m",
             "pytest",
-            "backend/bot_trainer/v2",
+            "backend/bot_trainer/v2/sft/tests",
             "-q",
             "--basetemp",
             str(root / ".tmp" / "bot-trainer-v2-sft" / "pytest"),
@@ -228,7 +228,7 @@ def train_model(args: argparse.Namespace, root: Path, env: dict[str, str]) -> No
     data_cache_dir = args.data_cache_dir or str(Path(args.data_dir) / ".tensor_cache")
     command = [
         args.python_exe,
-        "backend/bot_trainer/v2/train.py",
+        "backend/bot_trainer/v2/sft/train.py",
         "--data",
         args.data_dir,
         "--epochs",
@@ -307,7 +307,7 @@ def export_onnx(args: argparse.Namespace, root: Path, env: dict[str, str]) -> No
     run_command(
         [
             args.python_exe,
-            "backend/bot_trainer/v2/export_onnx.py",
+            "backend/bot_trainer/v2/sft/export_onnx.py",
             "--checkpoint",
             str(Path(args.checkpoint_dir) / "best.pt"),
             "--output",

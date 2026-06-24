@@ -255,7 +255,7 @@ def load_metadata(metadata_path: Path) -> dict[str, Any]:
         raise ValueError(
             f"unsupported metadata schema: {schema_version}; "
             f"expected {EXPECTED_METADATA_SCHEMA_VERSION}. "
-            "Re-export the dataset with backend/bot_trainer/v2/run_sft_pipeline.py, "
+            "Re-export the dataset with backend/bot_trainer/v2/sft/run_sft_pipeline.py, "
             "then rebuild or remove "
             "the data cache."
         )
