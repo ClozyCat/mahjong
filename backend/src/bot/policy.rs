@@ -2,40 +2,53 @@ use super::context::*;
 use super::features::BotFeaturesV2;
 use super::neural::{NeuralDecisionScores, RankedClaimScore, RankedTileScore};
 use crate::bot::action_space::CLAIM_ACTION_COUNT;
-use crate::bot::arena::ArenaBotPolicyConfig;
 use rand::{Rng, rngs::StdRng};
-use std::cell::Cell;
+use serde::{Deserialize, Serialize};
 use std::env;
-
-thread_local! {
-    static TIMING_ENCODE_NS: Cell<u128> = Cell::new(0);
-    static TIMING_INFERENCE_NS: Cell<u128> = Cell::new(0);
-    static TIMING_SAMPLE_NS: Cell<u128> = Cell::new(0);
-    static TIMING_COUNT: Cell<u64> = Cell::new(0);
-}
-
-pub(crate) fn reset_timing_detail() {
-    TIMING_ENCODE_NS.set(0);
-    TIMING_INFERENCE_NS.set(0);
-    TIMING_SAMPLE_NS.set(0);
-    TIMING_COUNT.set(0);
-}
-
-pub(crate) fn print_timing_detail() {
-    let count = TIMING_COUNT.get();
-    if count == 0 {
-        return;
-    }
-    let enc = TIMING_ENCODE_NS.get() as f64 / count as f64 / 1_000_000.0;
-    let inf = TIMING_INFERENCE_NS.get() as f64 / count as f64 / 1_000_000.0;
-    let sam = TIMING_SAMPLE_NS.get() as f64 / count as f64 / 1_000_000.0;
-    eprintln!(
-        "[timing_detail] encode={enc:.3}ms inference={inf:.3}ms sample={sam:.3}ms  (per-action, n={count})"
-    );
-}
 
 const NEURAL_DISCARD_VALUE_SCALE: f32 = 8.0;
 const NEURAL_HU_PASS_MARGIN: f32 = 3.0;
+
+#[derive(Clone, Debug, Deserialize, Serialize, PartialEq)]
+#[serde(deny_unknown_fields)]
+pub struct BotPolicyConfig {
+    pub id: String,
+    pub model_path: Option<String>,
+    #[serde(default)]
+    pub sample_actions: bool,
+    #[serde(default = "default_policy_temperature")]
+    pub temperature: f32,
+    #[serde(default)]
+    pub temperature_range: Option<[f32; 2]>,
+    #[serde(default = "default_discard_base_risk_weight")]
+    pub discard_base_risk_weight: f32,
+    #[serde(default = "default_discard_value_risk_range")]
+    pub discard_value_risk_range: f32,
+    #[serde(default = "default_discard_min_risk_weight")]
+    pub discard_min_risk_weight: f32,
+    #[serde(default = "default_discard_max_risk_weight")]
+    pub discard_max_risk_weight: f32,
+}
+
+fn default_policy_temperature() -> f32 {
+    1.0
+}
+
+fn default_discard_base_risk_weight() -> f32 {
+    0.90
+}
+
+fn default_discard_value_risk_range() -> f32 {
+    0.55
+}
+
+fn default_discard_min_risk_weight() -> f32 {
+    0.25
+}
+
+fn default_discard_max_risk_weight() -> f32 {
+    1.45
+}
 
 #[derive(Clone, Copy, Debug)]
 pub(crate) struct RiskConfig {
@@ -57,7 +70,7 @@ impl Default for RiskConfig {
 }
 
 impl RiskConfig {
-    pub fn from_arena_config(config: &ArenaBotPolicyConfig) -> Self {
+    pub fn from_policy_config(config: &BotPolicyConfig) -> Self {
         Self {
             base_risk_weight: config.discard_base_risk_weight,
             value_risk_range: config.discard_value_risk_range,
@@ -76,9 +89,8 @@ pub(crate) struct BotPolicyDecisionTelemetry {
 #[derive(Clone)]
 pub(crate) struct BotPolicyDecision {
     pub(crate) action: BotAction,
+    #[cfg_attr(not(test), allow(dead_code))]
     pub(crate) telemetry: BotPolicyDecisionTelemetry,
-    pub(crate) features: Option<BotFeaturesV2>,
-    pub(crate) neural_scores: Option<NeuralDecisionScores>,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -93,7 +105,7 @@ pub fn choose_active_turn_action(context: &BotContext) -> Option<BotAction> {
 
 pub fn choose_active_turn_action_with_config(
     context: &BotContext,
-    config: &ArenaBotPolicyConfig,
+    config: &BotPolicyConfig,
 ) -> Option<BotAction> {
     choose_active_turn_decision_with_config_and_rng(context, config, None)
         .map(|decision| decision.action)
@@ -101,19 +113,14 @@ pub fn choose_active_turn_action_with_config(
 
 pub(crate) fn choose_active_turn_decision_with_config_and_rng(
     context: &BotContext,
-    config: &ArenaBotPolicyConfig,
+    config: &BotPolicyConfig,
     mut rng: Option<&mut StdRng>,
 ) -> Option<BotPolicyDecision> {
     let mut telemetry = BotPolicyDecisionTelemetry::default();
-    let risk_config = RiskConfig::from_arena_config(config);
-    let _t0 = std::time::Instant::now();
+    let risk_config = RiskConfig::from_policy_config(config);
     let features = crate::bot::features::encode_bot_context_v2(context);
-    TIMING_ENCODE_NS.with(|t| t.set(t.get() + _t0.elapsed().as_nanos()));
-    let _t1 = std::time::Instant::now();
     if let Some(scores) = neural_decision_scores_for_policy_features(&features, config) {
-        TIMING_INFERENCE_NS.with(|t| t.set(t.get() + _t1.elapsed().as_nanos()));
         telemetry.model_loaded = true;
-        let _t2 = std::time::Instant::now();
         let action = if config.sample_actions {
             if let Some(rng) = rng.as_deref_mut() {
                 let temperature = sample_temperature(config, rng);
@@ -140,26 +147,14 @@ pub(crate) fn choose_active_turn_decision_with_config_and_rng(
         } else {
             select_neural_only_active_turn_action(context, &features, &scores, Some(&risk_config))
         };
-        TIMING_SAMPLE_NS.with(|t| t.set(t.get() + _t2.elapsed().as_nanos()));
-        TIMING_COUNT.with(|c| c.set(c.get() + 1));
         if let Some(action) = action {
             telemetry.used_neural_action = true;
-            return Some(BotPolicyDecision {
-                action,
-                telemetry,
-                features: Some(features),
-                neural_scores: Some(scores),
-            });
+            return Some(BotPolicyDecision { action, telemetry });
         }
     }
 
     let action = random_active_turn_action(context, rng)?;
-    Some(BotPolicyDecision {
-        action,
-        telemetry,
-        features: None,
-        neural_scores: None,
-    })
+    Some(BotPolicyDecision { action, telemetry })
 }
 
 pub fn choose_claim_action(context: &BotContext) -> Option<BotAction> {
@@ -168,14 +163,14 @@ pub fn choose_claim_action(context: &BotContext) -> Option<BotAction> {
 
 pub fn choose_claim_action_with_config(
     context: &BotContext,
-    config: &ArenaBotPolicyConfig,
+    config: &BotPolicyConfig,
 ) -> Option<BotAction> {
     choose_claim_decision_with_config_and_rng(context, config, None).map(|decision| decision.action)
 }
 
 pub(crate) fn choose_claim_decision_with_config_and_rng(
     context: &BotContext,
-    config: &ArenaBotPolicyConfig,
+    config: &BotPolicyConfig,
     mut rng: Option<&mut StdRng>,
 ) -> Option<BotPolicyDecision> {
     let mut telemetry = BotPolicyDecisionTelemetry::default();
@@ -196,27 +191,17 @@ pub(crate) fn choose_claim_decision_with_config_and_rng(
         };
         if let Some(action) = action {
             telemetry.used_neural_action = true;
-            return Some(BotPolicyDecision {
-                action,
-                telemetry,
-                features: Some(features),
-                neural_scores: Some(scores),
-            });
+            return Some(BotPolicyDecision { action, telemetry });
         }
     }
 
     let action = random_claim_action(context, rng)?;
-    Some(BotPolicyDecision {
-        action,
-        telemetry,
-        features: None,
-        neural_scores: None,
-    })
+    Some(BotPolicyDecision { action, telemetry })
 }
 
 pub(crate) fn choose_neural_hu_decision_with_config_and_rng(
     context: &BotContext,
-    config: &ArenaBotPolicyConfig,
+    config: &BotPolicyConfig,
     mut rng: Option<&mut StdRng>,
 ) -> Option<BotPolicyDecision> {
     let features = crate::bot::features::encode_bot_context_v2(context);
@@ -244,14 +229,12 @@ pub(crate) fn choose_neural_hu_decision_with_config_and_rng(
             model_loaded: maybe_scores.is_some(),
             used_neural_action: maybe_scores.is_some(),
         },
-        features: Some(features),
-        neural_scores: maybe_scores,
     })
 }
 
 pub(crate) fn choose_neural_claim_decision_with_config_and_rng(
     context: &BotContext,
-    config: &ArenaBotPolicyConfig,
+    config: &BotPolicyConfig,
     mut rng: Option<&mut StdRng>,
 ) -> Option<BotPolicyDecision> {
     let features = crate::bot::features::encode_bot_context_v2(context);
@@ -275,15 +258,13 @@ pub(crate) fn choose_neural_claim_decision_with_config_and_rng(
             used_neural_action: true,
         },
         action,
-        features: Some(features),
-        neural_scores: Some(scores),
     })
 }
 
-pub(crate) fn bot_policy_config_from_env() -> ArenaBotPolicyConfig {
+pub(crate) fn bot_policy_config_from_env() -> BotPolicyConfig {
     let model_path = env::var("MAHJONG_BOT_MODEL_PATH")
         .unwrap_or_else(|_| crate::special_bots::SFT_MODEL_PATH.to_string());
-    ArenaBotPolicyConfig {
+    BotPolicyConfig {
         id: "env-neural".to_string(),
         model_path: Some(model_path),
         sample_actions: false,
@@ -298,13 +279,13 @@ pub(crate) fn bot_policy_config_from_env() -> ArenaBotPolicyConfig {
 
 fn neural_decision_scores_for_policy_features(
     features: &BotFeaturesV2,
-    config: &ArenaBotPolicyConfig,
+    config: &BotPolicyConfig,
 ) -> Option<NeuralDecisionScores> {
     let path = config.model_path.as_deref().map(std::path::Path::new);
     super::neural::neural_decision_scores_for_features(path, features.clone())
 }
 
-fn sample_temperature(config: &ArenaBotPolicyConfig, rng: &mut impl Rng) -> f32 {
+fn sample_temperature(config: &BotPolicyConfig, rng: &mut impl Rng) -> f32 {
     match config.temperature_range {
         Some([min, max]) if min.is_finite() && max.is_finite() && max > min => {
             rng.random_range(min..max)
@@ -954,7 +935,7 @@ mod tests {
         context.player.concealed_tile_counts =
             tile_counts34(concealed_tiles.iter().map(|tile| tile.tile_key.as_str()));
         context.player.concealed_tiles = concealed_tiles.clone();
-        let config = ArenaBotPolicyConfig {
+        let config = BotPolicyConfig {
             id: "missing".to_string(),
             model_path: Some("missing-model.onnx".to_string()),
             sample_actions: false,
@@ -984,7 +965,7 @@ mod tests {
 
     #[test]
     fn sample_temperature_uses_configured_range() {
-        let config = ArenaBotPolicyConfig {
+        let config = BotPolicyConfig {
             id: "explorer".to_string(),
             model_path: None,
             sample_actions: true,
@@ -1010,7 +991,7 @@ mod tests {
             action_type: "hu".to_string(),
             tile_ids: Vec::new(),
         }];
-        let config = ArenaBotPolicyConfig {
+        let config = BotPolicyConfig {
             id: "missing".to_string(),
             model_path: Some("missing-model.onnx".to_string()),
             sample_actions: false,

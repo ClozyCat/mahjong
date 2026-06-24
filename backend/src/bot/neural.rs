@@ -1,12 +1,15 @@
 use super::action_space::{CLAIM_ACTION_COUNT, SELF_KONG_ACTION_COUNT, TILE_KIND_COUNT};
 #[cfg(test)]
 use super::action_space::{CLAIM_ACTIONS, tile_index};
+#[cfg(test)]
 use super::context::BotContext;
 #[cfg(test)]
 use super::context::BotTileView;
+#[cfg(test)]
+use super::features::encode_bot_context_v2;
 use super::features::{
     BotFeaturesV2, discard_event_feature_count_v2, discard_sequence_length_v2,
-    encode_bot_context_v2, scalar_feature_count_v2, tile_plane_count_v2,
+    scalar_feature_count_v2, tile_plane_count_v2,
 };
 use ort::{session::Session, value::Tensor};
 use std::{
@@ -47,14 +50,6 @@ pub(crate) struct RankedTileScore {
 pub(crate) struct RankedClaimScore {
     pub(crate) action_name: &'static str,
     pub(crate) logit: f32,
-}
-
-pub(crate) fn neural_decision_scores_for_model_path(
-    context: &BotContext,
-    model_path: Option<&Path>,
-) -> Option<NeuralDecisionScores> {
-    let features = encode_bot_context_v2(context);
-    neural_decision_scores_for_features(model_path, features)
 }
 
 pub(crate) fn neural_decision_scores_for_features(
@@ -357,10 +352,7 @@ fn extract_array<const N: usize>(
 }
 
 #[allow(dead_code)]
-fn extract_vec(
-    outputs: &ort::session::SessionOutputs,
-    output_name: &str,
-) -> Result<Vec<f32>, ()> {
+fn extract_vec(outputs: &ort::session::SessionOutputs, output_name: &str) -> Result<Vec<f32>, ()> {
     let output = outputs.get(output_name).ok_or(())?;
     let (_, values) = output.try_extract_tensor::<f32>().map_err(|_| ())?;
     Ok(values.to_vec())
@@ -388,7 +380,11 @@ pub(crate) fn neural_decision_scores_batched(
             session.borrow_mut().run_batched(features_batch).ok()
         });
     }
-    shared_session().lock().ok()?.run_batched(features_batch).ok()
+    shared_session()
+        .lock()
+        .ok()?
+        .run_batched(features_batch)
+        .ok()
 }
 
 impl OrtNeuralSession {
@@ -448,16 +444,11 @@ fn run_session_batched(
         ds_flat.extend_from_slice(&f.discard_sequence);
     }
 
-    let tp_tensor = Tensor::from_array(
-        ([batch_size, tile_plane_count, TILE_KIND_COUNT], tp_flat),
-    )
-    .map_err(|_| ())?;
-    let sf_tensor = Tensor::from_array(([batch_size, scalar_count], sf_flat))
+    let tp_tensor = Tensor::from_array(([batch_size, tile_plane_count, TILE_KIND_COUNT], tp_flat))
         .map_err(|_| ())?;
-    let ds_tensor = Tensor::from_array(
-        ([batch_size, seq_len, event_count], ds_flat),
-    )
-    .map_err(|_| ())?;
+    let sf_tensor = Tensor::from_array(([batch_size, scalar_count], sf_flat)).map_err(|_| ())?;
+    let ds_tensor =
+        Tensor::from_array(([batch_size, seq_len, event_count], ds_flat)).map_err(|_| ())?;
 
     let outputs = session
         .run(ort::inputs![
@@ -478,13 +469,9 @@ fn run_session_batched(
     let mut results = Vec::with_capacity(batch_size);
     for i in 0..batch_size {
         let mut discard = [0.0f32; TILE_KIND_COUNT];
-        discard.copy_from_slice(
-            &discard_all[i * TILE_KIND_COUNT..(i + 1) * TILE_KIND_COUNT],
-        );
+        discard.copy_from_slice(&discard_all[i * TILE_KIND_COUNT..(i + 1) * TILE_KIND_COUNT]);
         let mut claim = [0.0f32; CLAIM_ACTION_COUNT];
-        claim.copy_from_slice(
-            &claim_all[i * CLAIM_ACTION_COUNT..(i + 1) * CLAIM_ACTION_COUNT],
-        );
+        claim.copy_from_slice(&claim_all[i * CLAIM_ACTION_COUNT..(i + 1) * CLAIM_ACTION_COUNT]);
         let mut sk = [0.0f32; SELF_KONG_ACTION_COUNT];
         sk.copy_from_slice(
             &self_kong_all[i * SELF_KONG_ACTION_COUNT..(i + 1) * SELF_KONG_ACTION_COUNT],
@@ -581,8 +568,8 @@ mod tests {
 
     #[test]
     fn v2_session_outputs_named_multi_head_scores() {
-        let context = base_context();
-        let scores = neural_decision_scores_for_model_path(&context, None);
+        let scores =
+            neural_decision_scores_for_features(None, encode_bot_context_v2(&base_context()));
 
         if let Some(scores) = scores {
             assert_eq!(scores.discard_logits.len(), 34);
@@ -675,9 +662,20 @@ mod tests {
         let model_path = PathBuf::from("missing-model-for-cache-test.onnx");
         CACHED_SESSIONS.with(|sessions| sessions.borrow_mut().clear());
 
-        let context = base_context();
-        assert!(neural_decision_scores_for_model_path(&context, Some(&model_path)).is_none());
-        assert!(neural_decision_scores_for_model_path(&context, Some(&model_path)).is_none());
+        assert!(
+            neural_decision_scores_for_features(
+                Some(&model_path),
+                encode_bot_context_v2(&base_context())
+            )
+            .is_none()
+        );
+        assert!(
+            neural_decision_scores_for_features(
+                Some(&model_path),
+                encode_bot_context_v2(&base_context())
+            )
+            .is_none()
+        );
 
         CACHED_SESSIONS.with(|sessions| {
             let sessions = sessions.borrow();

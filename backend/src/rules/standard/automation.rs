@@ -3,7 +3,7 @@ use std::collections::HashSet;
 use chrono::Utc;
 use serde_json::Value;
 
-use crate::bot::arena::ArenaBotPolicyConfig;
+use crate::bot::policy::BotPolicyConfig;
 use crate::bot::{self, BotAction};
 use crate::core::engine::try_handle_player_action_in_room_state;
 use crate::core::state::{PendingAction, RoomState};
@@ -34,16 +34,7 @@ use super::win::{
 };
 
 const MAX_SEATS: usize = 4;
-type BotPolicyResolver<'a> = &'a dyn Fn(usize) -> ArenaBotPolicyConfig;
-
-pub(crate) struct BotDecisionTrace {
-    pub(crate) decision_kind: String,
-    pub(crate) context: crate::bot::context::BotContext,
-    pub(crate) features: Option<crate::bot::features::BotFeaturesV2>,
-    pub(crate) action: BotAction,
-    pub(crate) telemetry: crate::bot::policy::BotPolicyDecisionTelemetry,
-    pub(crate) neural_scores: Option<crate::bot::NeuralDecisionScores>,
-}
+type BotPolicyResolver<'a> = &'a dyn Fn(usize) -> BotPolicyConfig;
 
 pub fn next_bot_action_in_room_state(room: &RoomState) -> Result<Option<BotAction>, String> {
     Ok(next_bot_action_for_state(room))
@@ -56,18 +47,6 @@ pub fn next_bot_action_in_room_state_with_policy_resolver(
     Ok(next_bot_action_for_state_with_policy_resolver(
         room,
         policy_for_seat,
-    ))
-}
-
-pub(crate) fn next_bot_decision_trace_in_room_state_with_policy_resolver(
-    room: &RoomState,
-    policy_for_seat: BotPolicyResolver<'_>,
-    rollout_rng: Option<&mut rand::rngs::StdRng>,
-) -> Result<Option<BotDecisionTrace>, String> {
-    Ok(next_bot_decision_trace_for_state_with_policy_resolver(
-        room,
-        policy_for_seat,
-        rollout_rng,
     ))
 }
 
@@ -323,7 +302,7 @@ fn choose_bot_active_turn_action_with_cache_for_state(
     room: &RoomState,
     cache: &RoomScoringCache,
     seat_index: usize,
-    policy_config: &ArenaBotPolicyConfig,
+    policy_config: &BotPolicyConfig,
     can_hu: bool,
 ) -> Option<BotAction> {
     let bot_context = build_active_turn_bot_context(room, cache, seat_index, can_hu)?;
@@ -367,7 +346,7 @@ fn active_turn_hu_options(can_hu: bool) -> Vec<BotClaimOption> {
     }
 }
 
-fn policy_is_neural(policy_config: &ArenaBotPolicyConfig) -> bool {
+fn policy_is_neural(policy_config: &BotPolicyConfig) -> bool {
     let _ = policy_config;
     true
 }
@@ -417,7 +396,7 @@ fn choose_bot_claim_action_with_cache_for_state(
     room: &RoomState,
     cache: &RoomScoringCache,
     seat_index: usize,
-    policy_config: &ArenaBotPolicyConfig,
+    policy_config: &BotPolicyConfig,
 ) -> Option<BotAction> {
     let claim = match room.round_state.as_ref()?.pending_action.as_ref()? {
         PendingAction::ClaimWindow(claim) => claim,
@@ -506,7 +485,7 @@ fn next_ready_hand_action_for_state(
     state: &RoomState,
     cache: &RoomScoringCache,
     seat_index: usize,
-    policy_config: &ArenaBotPolicyConfig,
+    policy_config: &BotPolicyConfig,
 ) -> Option<BotAction> {
     if let Some(tile_id) = player_first_flower_tile_id_from_cache(cache, seat_index) {
         return Some(BotAction {
@@ -680,173 +659,6 @@ fn next_bot_action_for_state_with_policy_resolver(
                     seat_index,
                     &policy_config,
                 )
-            }
-        },
-        _ => None,
-    }
-}
-
-fn next_bot_decision_trace_for_state_with_policy_resolver(
-    state: &RoomState,
-    policy_for_seat: BotPolicyResolver<'_>,
-    mut rollout_rng: Option<&mut rand::rngs::StdRng>,
-) -> Option<BotDecisionTrace> {
-    if state.phase != "playing" {
-        return None;
-    }
-    let pending_timeout = state.pending_timeout.as_ref()?;
-    let round = state.round_state.as_ref()?;
-    match pending_timeout.kind.as_str() {
-        "active_turn" => {
-            let seat_index = round.current_actor;
-            if !seat_is_bot(state, seat_index) || player_is_ready_hand(state, seat_index) {
-                return None;
-            }
-            let cache = RoomScoringCache::from_state(state);
-            let policy_config = policy_for_seat(seat_index);
-            let can_hu = can_declare_self_draw_hu_with_cache_for_state(state, &cache, seat_index);
-            if can_hu {
-                let context = build_active_turn_bot_context(state, &cache, seat_index, true)?;
-                if policy_is_neural(&policy_config) {
-                    match bot::policy::choose_neural_hu_decision_with_config_and_rng(
-                        &context,
-                        &policy_config,
-                        rollout_rng.as_deref_mut(),
-                    ) {
-                        Some(decision) if decision.action.action_type == "hu" => {
-                            return Some(BotDecisionTrace {
-                                decision_kind: "active_turn".to_string(),
-                                context,
-                                action: decision.action,
-                                features: decision.features,
-                                telemetry: decision.telemetry,
-                                neural_scores: decision.neural_scores,
-                            });
-                        }
-                        Some(_) => {}
-                        None => return None,
-                    }
-                } else {
-                    return None;
-                }
-            }
-            if player_first_flower_tile_id_from_cache(&cache, seat_index).is_some() {
-                return None;
-            }
-            let context = build_active_turn_bot_context(state, &cache, seat_index, can_hu)?;
-            let decision = bot::policy::choose_active_turn_decision_with_config_and_rng(
-                &context,
-                &policy_config,
-                rollout_rng.as_deref_mut(),
-            )?;
-            Some(BotDecisionTrace {
-                decision_kind: "active_turn".to_string(),
-                context,
-                action: decision.action,
-                features: decision.features,
-                telemetry: decision.telemetry,
-                neural_scores: decision.neural_scores,
-            })
-        }
-        "claim_window" => match round.pending_action.as_ref()? {
-            PendingAction::ClaimWindow(claim) => {
-                let cache = RoomScoringCache::from_state(state);
-                let seat_index = next_claim_window_responder_seat(claim)
-                    .filter(|seat| seat_is_bot(state, *seat))?;
-                let policy_config = policy_for_seat(seat_index);
-                let hu_offered = claim_window_offers_action(claim, seat_index, "hu");
-                let hu_allowed =
-                    hu_offered && hu_meets_bot_minimum_fan_for_state(state, seat_index, "discard");
-                if policy_is_neural(&policy_config) {
-                    let claim_options =
-                        claim_options_for_seat(&cache, claim, seat_index, hu_allowed);
-                    let context = build_bot_context_view(
-                        &cache,
-                        state,
-                        seat_index,
-                        claim_options,
-                        Vec::new(),
-                        HashSet::new(),
-                    )?;
-                    if let Some(decision) =
-                        bot::policy::choose_neural_claim_decision_with_config_and_rng(
-                            &context,
-                            &policy_config,
-                            rollout_rng.as_deref_mut(),
-                        )
-                    {
-                        return Some(BotDecisionTrace {
-                            decision_kind: "claim_window".to_string(),
-                            context,
-                            action: decision.action,
-                            features: decision.features,
-                            telemetry: decision.telemetry,
-                            neural_scores: decision.neural_scores,
-                        });
-                    }
-                }
-                if hu_allowed {
-                    return None;
-                }
-                let claim_options = claim_options_for_seat(&cache, claim, seat_index, false);
-                let context = build_bot_context_view(
-                    &cache,
-                    state,
-                    seat_index,
-                    claim_options,
-                    Vec::new(),
-                    HashSet::new(),
-                )?;
-                let policy_config = policy_for_seat(seat_index);
-                let decision = bot::policy::choose_claim_decision_with_config_and_rng(
-                    &context,
-                    &policy_config,
-                    rollout_rng.as_deref_mut(),
-                )?;
-                Some(BotDecisionTrace {
-                    decision_kind: "claim_window".to_string(),
-                    context,
-                    action: decision.action,
-                    features: decision.features,
-                    telemetry: decision.telemetry,
-                    neural_scores: decision.neural_scores,
-                })
-            }
-            PendingAction::RobKongWindow(rob) => {
-                let seat_index =
-                    next_rob_kong_responder_seat(rob).filter(|seat| seat_is_bot(state, *seat))?;
-                let policy_config = policy_for_seat(seat_index);
-                if !hu_meets_bot_minimum_fan_for_state(state, seat_index, "discard") {
-                    return None;
-                }
-                if !policy_is_neural(&policy_config) {
-                    return None;
-                }
-                let cache = RoomScoringCache::from_state(state);
-                let context = build_bot_context_view(
-                    &cache,
-                    state,
-                    seat_index,
-                    vec![BotClaimOption {
-                        action_type: "hu".to_string(),
-                        tile_ids: Vec::new(),
-                    }],
-                    Vec::new(),
-                    HashSet::new(),
-                )?;
-                let decision = bot::policy::choose_neural_claim_decision_with_config_and_rng(
-                    &context,
-                    &policy_config,
-                    rollout_rng.as_deref_mut(),
-                )?;
-                Some(BotDecisionTrace {
-                    decision_kind: "claim_window".to_string(),
-                    context,
-                    action: decision.action,
-                    features: decision.features,
-                    telemetry: decision.telemetry,
-                    neural_scores: decision.neural_scores,
-                })
             }
         },
         _ => None,

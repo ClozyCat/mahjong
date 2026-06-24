@@ -1,7 +1,7 @@
 #[allow(unused_imports)]
 pub(crate) use crate::projection::bot_view::{
     BotClaimOption, BotContextView as BotContext, BotPlayerView as BotPlayerContext,
-    BotSelfKongKind, BotTileCounts as ProjectionTileCounts, BotTileView,
+    BotSelfKongKind, BotTileView,
 };
 
 pub(crate) const TILE_KIND_COUNT: usize = 34;
@@ -12,8 +12,6 @@ const STANDARD_TILE_KEYS: [&str; 34] = [
     "north", "red", "green", "white",
 ];
 const WIND_ORDER: [&str; 4] = ["east", "south", "west", "north"];
-
-pub(crate) type TileCounts = ProjectionTileCounts;
 
 #[derive(Clone)]
 pub struct BotAction {

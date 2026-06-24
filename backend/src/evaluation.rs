@@ -1,6 +1,6 @@
 use serde::{Deserialize, Serialize};
 
-use crate::bot::arena::ArenaBotPolicyConfig;
+use crate::bot::policy::BotPolicyConfig;
 use crate::core::state::RoomState;
 
 pub const EVALUATION_ROOM_MODE: &str = "evaluation";
@@ -13,7 +13,7 @@ pub const EVALUATION_MINIMUM_HU_FAN: i64 = 8;
 pub struct EvaluationSubjectPolicyConfig {
     pub display_name: String,
     #[serde(flatten)]
-    pub policy: ArenaBotPolicyConfig,
+    pub policy: BotPolicyConfig,
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize, PartialEq)]
@@ -26,7 +26,7 @@ pub struct EvaluationArenaConfig {
     #[serde(default)]
     pub report_trajectories: bool,
     pub subjects: Vec<EvaluationSubjectPolicyConfig>,
-    pub opponents: Vec<ArenaBotPolicyConfig>,
+    pub opponents: Vec<BotPolicyConfig>,
     #[serde(default)]
     pub expert_source: Option<String>,
 }
@@ -61,8 +61,8 @@ impl EvaluationArenaConfig {
     pub fn new_for_test(
         matches: usize,
         seed: u64,
-        subjects: Vec<ArenaBotPolicyConfig>,
-        opponents: Vec<ArenaBotPolicyConfig>,
+        subjects: Vec<BotPolicyConfig>,
+        opponents: Vec<BotPolicyConfig>,
     ) -> Result<Self, String> {
         let config = Self {
             matches,
@@ -98,9 +98,9 @@ pub fn evaluation_match_seeds(seed: u64, matches: usize) -> Vec<u64> {
         .collect()
 }
 
-pub fn default_sft_opponents() -> Vec<ArenaBotPolicyConfig> {
+pub fn default_sft_opponents() -> Vec<BotPolicyConfig> {
     (0..3)
-        .map(|index| ArenaBotPolicyConfig {
+        .map(|index| BotPolicyConfig {
             id: format!("sft-opponent-{}", index + 1),
             model_path: Some(crate::special_bots::SFT_MODEL_PATH.to_string()),
             sample_actions: false,
@@ -151,8 +151,8 @@ mod tests {
         assert_eq!(seeds, vec![100, 101, 102]);
     }
 
-    fn test_policy(id: &str) -> crate::bot::arena::ArenaBotPolicyConfig {
-        crate::bot::arena::ArenaBotPolicyConfig {
+    fn test_policy(id: &str) -> BotPolicyConfig {
+        BotPolicyConfig {
             id: id.to_string(),
             model_path: Some(crate::special_bots::SFT_MODEL_PATH.to_string()),
             sample_actions: false,

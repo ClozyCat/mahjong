@@ -1,4 +1,4 @@
-use crate::bot::arena::ArenaBotPolicyConfig;
+use crate::bot::policy::BotPolicyConfig;
 use crate::core::state::{RoomState, SeatState};
 use std::sync::OnceLock;
 
@@ -75,8 +75,7 @@ fn resolve_bot_model_path(env_name: &str) -> String {
 
 #[cfg(test)]
 pub(crate) fn model_path_for_display_name(display_name: &str) -> Option<String> {
-    definition_for_display_name(display_name)
-        .map(|bot| resolve_bot_model_path(bot.model_path_env))
+    definition_for_display_name(display_name).map(|bot| resolve_bot_model_path(bot.model_path_env))
 }
 
 #[cfg(test)]
@@ -96,7 +95,7 @@ pub(crate) fn is_independent_bot_seat(seat: &SeatState) -> bool {
     seat.seat_type == "bot" || (seat.seat_type.is_empty() && seat.is_bot)
 }
 
-pub(crate) fn policy_config_for_seat(room: &RoomState, seat_index: usize) -> ArenaBotPolicyConfig {
+pub(crate) fn policy_config_for_seat(room: &RoomState, seat_index: usize) -> BotPolicyConfig {
     let (policy_id, model_path, temperature, sample_actions) = room
         .seats
         .iter()
@@ -114,15 +113,10 @@ pub(crate) fn policy_config_for_seat(room: &RoomState, seat_index: usize) -> Are
                     )
                 })
         })
-        .unwrap_or((
-            "sft",
-            default_model_path().to_string(),
-            1.0,
-            false,
-        ));
+        .unwrap_or(("sft", default_model_path().to_string(), 1.0, false));
     let is_evaluation = room.mode == crate::evaluation::EVALUATION_ROOM_MODE;
 
-    ArenaBotPolicyConfig {
+    BotPolicyConfig {
         id: format!("{policy_id}-seat-{seat_index}"),
         model_path: Some(model_path),
         sample_actions: sample_actions && !is_evaluation,
