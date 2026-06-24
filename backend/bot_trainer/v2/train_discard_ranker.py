@@ -26,6 +26,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--lr", type=float, default=1e-5)
     parser.add_argument("--temperature", type=float, default=1.5)
     parser.add_argument("--top1-weight", type=float, default=0.1)
+    parser.add_argument("--risk-penalty-weight", type=float, default=0.1)
     parser.add_argument("--grad-clip-norm", type=float, default=1.0)
     parser.add_argument("--policy-id", default="learner")
     parser.add_argument("--device", default="auto")
@@ -46,16 +47,20 @@ def compute_ranker_loss(
     batch: dict[str, torch.Tensor],
     temperature: float,
     top1_weight: float,
+    risk_penalty_weight: float = 0.0,
 ) -> torch.Tensor:
     legal_mask = batch["legal_mask"].bool()
     student_log_probs = masked_log_softmax(outputs["discard_logits"] / temperature, legal_mask)
     teacher_scores = batch["teacher_scores"].float().masked_fill(~legal_mask, -1.0e9)
     teacher_probs = F.softmax(teacher_scores / temperature, dim=-1)
-    kl_loss = F.kl_div(student_log_probs, teacher_probs, reduction="batchmean") * (temperature**2)
-    if top1_weight <= 0:
-        return kl_loss
-    top1_loss = F.nll_loss(student_log_probs, batch["teacher_best_index"].long())
-    return kl_loss + top1_weight * top1_loss
+    loss = F.kl_div(student_log_probs, teacher_probs, reduction="batchmean") * (temperature**2)
+    if top1_weight > 0:
+        loss = loss + top1_weight * F.nll_loss(student_log_probs, batch["teacher_best_index"].long())
+    if risk_penalty_weight > 0 and "risk_scores" in batch:
+        student_probs = student_log_probs.exp().masked_fill(~legal_mask, 0.0)
+        expected_risk = (student_probs * batch["risk_scores"].float()).sum(dim=-1).mean()
+        loss = loss + risk_penalty_weight * expected_risk
+    return loss
 
 
 def ranker_metrics(
@@ -77,7 +82,11 @@ def ranker_metrics(
         margin = (target_logits[has_competitor] - competitor_best[has_competitor]).mean().item()
     else:
         margin = 0.0
-    return {"top1": top1, "target_margin": margin}
+    expected_risk = 0.0
+    if "risk_scores" in batch:
+        probs = F.softmax(masked_logits, dim=-1).masked_fill(~legal_mask, 0.0)
+        expected_risk = (probs * batch["risk_scores"].float()).sum(dim=-1).mean().item()
+    return {"top1": top1, "target_margin": margin, "expected_risk": expected_risk}
 
 
 def move_batch(batch: dict[str, torch.Tensor], device: torch.device) -> dict[str, torch.Tensor]:
@@ -91,6 +100,7 @@ def run_epoch(
     device: torch.device,
     temperature: float,
     top1_weight: float,
+    risk_penalty_weight: float,
     grad_clip_norm: float,
     desc: str,
 ) -> dict[str, float]:
@@ -99,6 +109,7 @@ def run_epoch(
     loss_sum = 0.0
     top1_sum = 0.0
     margin_sum = 0.0
+    risk_sum = 0.0
     count = 0
     pbar = tqdm(loader, desc=desc, dynamic_ncols=True)
     for batch in pbar:
@@ -109,7 +120,7 @@ def run_epoch(
                 batch["scalar_features"].float(),
                 batch["discard_sequence"].float(),
             )
-            loss = compute_ranker_loss(outputs, batch, temperature, top1_weight)
+            loss = compute_ranker_loss(outputs, batch, temperature, top1_weight, risk_penalty_weight)
             if is_training:
                 optimizer.zero_grad(set_to_none=True)
                 loss.backward()
@@ -121,12 +132,18 @@ def run_epoch(
         loss_sum += loss.item() * batch_size
         top1_sum += metrics["top1"] * batch_size
         margin_sum += metrics["target_margin"] * batch_size
+        risk_sum += metrics["expected_risk"] * batch_size
         count += batch_size
-        pbar.set_postfix({"loss": f"{loss_sum / max(1, count):.4f}", "top1": f"{top1_sum / max(1, count):.3f}"})
+        pbar.set_postfix({
+            "loss": f"{loss_sum / max(1, count):.4f}",
+            "top1": f"{top1_sum / max(1, count):.3f}",
+            "risk": f"{risk_sum / max(1, count):.3f}",
+        })
     return {
         "loss": loss_sum / max(1, count),
         "top1": top1_sum / max(1, count),
         "target_margin": margin_sum / max(1, count),
+        "expected_risk": risk_sum / max(1, count),
     }
 
 
@@ -187,6 +204,7 @@ def main() -> None:
             device,
             args.temperature,
             args.top1_weight,
+            args.risk_penalty_weight,
             args.grad_clip_norm,
             f"Discard ranker epoch {epoch}/{args.epochs}",
         )

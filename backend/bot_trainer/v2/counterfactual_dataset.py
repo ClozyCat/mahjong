@@ -35,12 +35,17 @@ def encode_counterfactual_row(row: dict[str, Any]) -> dict[str, torch.Tensor]:
     raw_scores = [float(score) for score in row["teacher_scores"]]
     if len(legal_discards) != len(raw_scores):
         raise ValueError("legal_discards and teacher_scores must have the same length")
+    raw_risk_scores = [float(score) for score in row.get("risk_scores", [0.0] * len(legal_discards))]
+    if len(legal_discards) != len(raw_risk_scores):
+        raise ValueError("legal_discards and risk_scores must have the same length")
 
     legal_mask = torch.zeros(TILE_KIND_COUNT, dtype=torch.bool)
     teacher_scores = torch.full((TILE_KIND_COUNT,), float("-inf"), dtype=torch.float32)
-    for tile_index, score in zip(legal_discards, raw_scores, strict=True):
+    risk_scores = torch.zeros(TILE_KIND_COUNT, dtype=torch.float32)
+    for tile_index, score, risk_score in zip(legal_discards, raw_scores, raw_risk_scores, strict=True):
         legal_mask[tile_index] = True
         teacher_scores[tile_index] = score
+        risk_scores[tile_index] = risk_score
 
     return {
         "tile_planes": torch.tensor(row["tile_planes"], dtype=torch.float32).view(-1, 34),
@@ -52,5 +57,6 @@ def encode_counterfactual_row(row: dict[str, Any]) -> dict[str, torch.Tensor]:
         "discard_mask": torch.tensor(row["discard_mask"], dtype=torch.bool),
         "legal_mask": legal_mask,
         "teacher_scores": teacher_scores,
+        "risk_scores": risk_scores,
         "teacher_best_index": torch.tensor(int(row["teacher_best_index"]), dtype=torch.long),
     }

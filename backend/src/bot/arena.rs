@@ -191,6 +191,7 @@ pub struct CounterfactualDiscardRow {
     pub discard_mask: Vec<bool>,
     pub legal_discards: Vec<usize>,
     pub teacher_scores: Vec<f32>,
+    pub risk_scores: Vec<f32>,
     pub teacher_best_index: usize,
     pub phase_bucket: String,
     pub risk_bucket: String,
@@ -974,10 +975,12 @@ fn counterfactual_discard_row_from_trace(
     let logits = risk_adjusted_discard_logits(scores, Some(&risk_config));
     let mut legal_discards = Vec::new();
     let mut teacher_scores = Vec::new();
+    let mut risk_scores = Vec::new();
     for (index, allowed) in features.discard_mask.iter().enumerate() {
         if *allowed && logits[index].is_finite() {
             legal_discards.push(index);
             teacher_scores.push(logits[index]);
+            risk_scores.push(sigmoid_probability(scores.risk_logits[index]).unwrap_or(0.0));
         }
     }
     if legal_discards.is_empty() {
@@ -1000,6 +1003,7 @@ fn counterfactual_discard_row_from_trace(
         discard_mask: features.discard_mask.to_vec(),
         legal_discards: legal_discards.clone(),
         teacher_scores,
+        risk_scores,
         teacher_best_index: legal_discards[best_offset],
         phase_bucket: phase_bucket_for_wall(trace.context.wall_tiles_remaining),
         risk_bucket: risk_bucket_for_scores(scores),

@@ -28,6 +28,7 @@ from train_value import BestValueCheckpoint
 from candidate_bank import CandidateRecord, CandidateBank, select_best_candidate
 from bucket_report import bucket_key, summarize_buckets
 from counterfactual_dataset import CounterfactualDiscardDataset
+from build_counterfactual_teacher import RolloutTeacherConfig, enhance_counterfactual_rows
 from train_discard_ranker import compute_ranker_loss, ranker_metrics
 
 
@@ -644,6 +645,7 @@ class TestCounterfactualDiscardDataset:
             "discard_mask": [True] * 34,
             "legal_discards": [0, 3, 5],
             "teacher_scores": [0.1, 0.5, -0.2],
+            "risk_scores": [0.2, 0.7, 0.1],
             "teacher_best_index": 3,
             "phase_bucket": "mid",
             "risk_bucket": "low",
@@ -659,6 +661,7 @@ class TestCounterfactualDiscardDataset:
         assert item["tile_planes"].shape == (10, 34)
         assert item["legal_mask"].sum().item() == 3
         assert item["teacher_scores"][3].item() == pytest.approx(0.5)
+        assert item["risk_scores"][3].item() == pytest.approx(0.7)
         assert item["teacher_best_index"].item() == 3
 
     def test_filters_by_policy_id(self):
@@ -671,6 +674,7 @@ class TestCounterfactualDiscardDataset:
             "discard_mask": [True] * 34,
             "legal_discards": [0],
             "teacher_scores": [1.0],
+            "risk_scores": [0.0],
             "teacher_best_index": 0,
         }
         opponent = {**learner, "policy_id": "opponent"}
@@ -729,3 +733,221 @@ class TestDiscardRanker:
 
         assert metrics["top1"] == pytest.approx(1.0)
         assert metrics["target_margin"] == pytest.approx(2.0)
+
+    def test_loss_penalizes_student_probability_on_high_risk_discards(self):
+        batch = {
+            "legal_mask": torch.tensor([[True, True]]),
+            "teacher_scores": torch.tensor([[1.0, 1.0]], dtype=torch.float32),
+            "teacher_best_index": torch.tensor([0]),
+            "risk_scores": torch.tensor([[0.0, 1.0]], dtype=torch.float32),
+        }
+        safer_outputs = {"discard_logits": torch.tensor([[3.0, 0.0]], dtype=torch.float32)}
+        risky_outputs = {"discard_logits": torch.tensor([[0.0, 3.0]], dtype=torch.float32)}
+
+        safer_loss = compute_ranker_loss(
+            safer_outputs,
+            batch,
+            temperature=1.0,
+            top1_weight=0.0,
+            risk_penalty_weight=0.5,
+        )
+        risky_loss = compute_ranker_loss(
+            risky_outputs,
+            batch,
+            temperature=1.0,
+            top1_weight=0.0,
+            risk_penalty_weight=0.5,
+        )
+
+        assert risky_loss.item() > safer_loss.item()
+
+    def test_metrics_report_expected_risk_under_student_policy(self):
+        outputs = {"discard_logits": torch.tensor([[3.0, 0.0]], dtype=torch.float32)}
+        batch = {
+            "legal_mask": torch.tensor([[True, True]]),
+            "teacher_scores": torch.tensor([[1.0, 1.0]], dtype=torch.float32),
+            "teacher_best_index": torch.tensor([0]),
+            "risk_scores": torch.tensor([[0.0, 1.0]], dtype=torch.float32),
+        }
+
+        metrics = ranker_metrics(outputs, batch)
+
+        assert 0.0 < metrics["expected_risk"] < 0.5
+
+
+class TestCounterfactualTeacher:
+    def test_rollout_return_prior_promotes_higher_return_discard(self):
+        counterfactual_rows = [{
+            "schema_version": 1,
+            "match_id": "m_cf",
+            "decision_index": 0,
+            "seat_index": 0,
+            "policy_id": "learner",
+            "tile_planes": [0.0] * 340,
+            "scalar_features": [0.0] * 13,
+            "discard_sequence": [0.0] * 1280,
+            "discard_mask": [True] * 34,
+            "legal_discards": [0, 3],
+            "teacher_scores": [0.0, 0.0],
+            "risk_scores": [0.0, 0.0],
+            "teacher_best_index": 3,
+            "phase_bucket": "mid",
+            "risk_bucket": "low",
+        }]
+        trajectory_rows = [
+            make_sample_row(match_id=f"good_{i}", action_index=0, reward=1.0, done=True, phase_bucket="mid", risk_bucket="low")
+            for i in range(3)
+        ] + [
+            make_sample_row(match_id=f"bad_{i}", action_index=3, reward=-1.0, done=True, phase_bucket="mid", risk_bucket="low")
+            for i in range(3)
+        ]
+
+        enhanced = enhance_counterfactual_rows(
+            counterfactual_rows,
+            trajectory_rows,
+            RolloutTeacherConfig(prior_weight=1.0, safety_weight=0.0, min_count=1),
+        )
+
+        assert enhanced[0]["teacher_best_index"] == 0
+        assert enhanced[0]["teacher_scores"][0] > enhanced[0]["teacher_scores"][1]
+
+    def test_normalized_teacher_scores_let_rollout_prior_override_large_raw_margin(self):
+        counterfactual_rows = [{
+            "schema_version": 1,
+            "match_id": "m_cf",
+            "decision_index": 0,
+            "seat_index": 0,
+            "policy_id": "learner",
+            "tile_planes": [0.0] * 340,
+            "scalar_features": [0.0] * 13,
+            "discard_sequence": [0.0] * 1280,
+            "discard_mask": [True] * 34,
+            "legal_discards": [0, 3],
+            "teacher_scores": [0.0, 10.0],
+            "risk_scores": [0.0, 0.0],
+            "teacher_best_index": 3,
+            "phase_bucket": "mid",
+            "risk_bucket": "low",
+        }]
+        trajectory_rows = [
+            make_sample_row(match_id=f"good_{i}", action_index=0, reward=1.0, done=True, phase_bucket="mid", risk_bucket="low")
+            for i in range(3)
+        ] + [
+            make_sample_row(match_id=f"bad_{i}", action_index=3, reward=-1.0, done=True, phase_bucket="mid", risk_bucket="low")
+            for i in range(3)
+        ]
+
+        enhanced = enhance_counterfactual_rows(
+            counterfactual_rows,
+            trajectory_rows,
+            RolloutTeacherConfig(
+                prior_weight=2.0,
+                safety_weight=0.0,
+                teacher_logit_weight=0.5,
+                normalize_teacher_scores=True,
+                max_score_delta=0.0,
+                min_count=1,
+            ),
+        )
+
+        assert enhanced[0]["teacher_best_index"] == 0
+
+    def test_default_teacher_preserves_large_raw_margin(self):
+        counterfactual_rows = [{
+            "schema_version": 1,
+            "match_id": "m_cf",
+            "decision_index": 0,
+            "seat_index": 0,
+            "policy_id": "learner",
+            "tile_planes": [0.0] * 340,
+            "scalar_features": [0.0] * 13,
+            "discard_sequence": [0.0] * 1280,
+            "discard_mask": [True] * 34,
+            "legal_discards": [0, 3],
+            "teacher_scores": [0.0, 10.0],
+            "risk_scores": [0.0, 0.0],
+            "teacher_best_index": 3,
+            "phase_bucket": "mid",
+            "risk_bucket": "low",
+        }]
+        trajectory_rows = [
+            make_sample_row(match_id=f"good_{i}", action_index=0, reward=1.0, done=True, phase_bucket="mid", risk_bucket="low")
+            for i in range(3)
+        ] + [
+            make_sample_row(match_id=f"bad_{i}", action_index=3, reward=-1.0, done=True, phase_bucket="mid", risk_bucket="low")
+            for i in range(3)
+        ]
+
+        enhanced = enhance_counterfactual_rows(
+            counterfactual_rows,
+            trajectory_rows,
+            RolloutTeacherConfig(min_count=1),
+        )
+
+        assert enhanced[0]["teacher_best_index"] == 3
+
+    def test_teacher_score_delta_is_clipped(self):
+        counterfactual_rows = [{
+            "schema_version": 1,
+            "match_id": "m_cf",
+            "decision_index": 0,
+            "seat_index": 0,
+            "policy_id": "learner",
+            "tile_planes": [0.0] * 340,
+            "scalar_features": [0.0] * 13,
+            "discard_sequence": [0.0] * 1280,
+            "discard_mask": [True] * 34,
+            "legal_discards": [0, 3],
+            "teacher_scores": [0.0, 0.0],
+            "risk_scores": [0.0, 0.0],
+            "teacher_best_index": 0,
+            "phase_bucket": "mid",
+            "risk_bucket": "low",
+        }]
+        trajectory_rows = [
+            make_sample_row(match_id=f"good_{i}", action_index=0, reward=1.0, done=True, phase_bucket="mid", risk_bucket="low")
+            for i in range(3)
+        ] + [
+            make_sample_row(match_id=f"bad_{i}", action_index=3, reward=-1.0, done=True, phase_bucket="mid", risk_bucket="low")
+            for i in range(3)
+        ]
+
+        enhanced = enhance_counterfactual_rows(
+            counterfactual_rows,
+            trajectory_rows,
+            RolloutTeacherConfig(
+                prior_weight=5.0,
+                safety_weight=0.0,
+                max_score_delta=0.2,
+                min_count=1,
+            ),
+        )
+
+        assert max(abs(score) for score in enhanced[0]["teacher_scores"]) <= 0.2
+
+    def test_safety_penalty_can_break_equal_teacher_scores(self):
+        counterfactual_rows = [{
+            "schema_version": 1,
+            "match_id": "m_cf",
+            "decision_index": 0,
+            "seat_index": 0,
+            "policy_id": "learner",
+            "tile_planes": [0.0] * 340,
+            "scalar_features": [0.0] * 13,
+            "discard_sequence": [0.0] * 1280,
+            "discard_mask": [True] * 34,
+            "legal_discards": [0, 1],
+            "teacher_scores": [0.0, 0.0],
+            "risk_scores": [0.9, 0.1],
+            "teacher_best_index": 0,
+            "phase_bucket": "early",
+            "risk_bucket": "low",
+        }]
+
+        enhanced = enhance_counterfactual_rows(
+            counterfactual_rows,
+            [],
+            RolloutTeacherConfig(prior_weight=0.0, safety_weight=1.0, min_count=1),
+        )
+
+        assert enhanced[0]["teacher_best_index"] == 1

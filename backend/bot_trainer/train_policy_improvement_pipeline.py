@@ -37,6 +37,12 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--ranker-lr", type=float, default=1e-5)
     parser.add_argument("--ranker-temperature", type=float, default=1.5)
     parser.add_argument("--ranker-top1-weight", type=float, default=0.1)
+    parser.add_argument("--ranker-risk-penalty-weight", type=float, default=0.1)
+    parser.add_argument("--teacher-prior-weight", type=float, default=0.25)
+    parser.add_argument("--teacher-safety-weight", type=float, default=0.10)
+    parser.add_argument("--teacher-logit-weight", type=float, default=1.0)
+    parser.add_argument("--teacher-min-count", type=int, default=5)
+    parser.add_argument("--teacher-max-score-delta", type=float, default=0.35)
     parser.add_argument("--awr-epochs", type=int, default=2)
     parser.add_argument("--awr-lr", type=float, default=5e-6)
     parser.add_argument("--awr-temperature", type=float, default=1.0)
@@ -206,10 +212,44 @@ def train_ranker(base_checkpoint: Path, counterfactual_discards: Path, iter_dir:
         str(args.ranker_temperature),
         "--top1-weight",
         str(args.ranker_top1_weight),
+        "--risk-penalty-weight",
+        str(args.ranker_risk_penalty_weight),
         "--policy-id",
         "learner",
     ])
     return ranker_checkpoint
+
+
+def build_counterfactual_teacher(
+    counterfactual_discards: Path,
+    trajectories: Path,
+    iter_dir: Path,
+    args: argparse.Namespace,
+) -> Path:
+    teacher_path = iter_dir / "counterfactual_teacher.jsonl"
+    run([
+        sys.executable,
+        "backend/bot_trainer/v2/build_counterfactual_teacher.py",
+        "--counterfactual-discards",
+        str(counterfactual_discards),
+        "--trajectories",
+        str(trajectories),
+        "--output",
+        str(teacher_path),
+        "--policy-id",
+        "learner",
+        "--prior-weight",
+        str(args.teacher_prior_weight),
+        "--safety-weight",
+        str(args.teacher_safety_weight),
+        "--teacher-logit-weight",
+        str(args.teacher_logit_weight),
+        "--min-count",
+        str(args.teacher_min_count),
+        "--max-score-delta",
+        str(args.teacher_max_score_delta),
+    ])
+    return teacher_path
 
 
 def train_value_head(base_checkpoint: Path, trajectories: Path, iter_dir: Path, args: argparse.Namespace) -> Path:
@@ -407,8 +447,9 @@ def main() -> None:
             "--output",
             str(iter_dir / "bucket_report.json"),
         ])
+        counterfactual_teacher = build_counterfactual_teacher(counterfactual_discards, trajectories, iter_dir, args)
         value_checkpoint = train_value_head(base_checkpoint, trajectories, iter_dir, args)
-        ranker_checkpoint = train_ranker(value_checkpoint, counterfactual_discards, iter_dir, args)
+        ranker_checkpoint = train_ranker(value_checkpoint, counterfactual_teacher, iter_dir, args)
         awr_checkpoint = run_awr(ranker_checkpoint, trajectories, iter_dir, args)
         candidate_onnx = iter_dir / "candidate.onnx"
         export_candidate(awr_checkpoint, candidate_onnx)

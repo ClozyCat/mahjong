@@ -181,6 +181,9 @@ def test_policy_improvement_pipeline_uses_counterfactual_ranker_and_gates() -> N
     assert "--start-iteration" in script
     assert "train_discard_ranker.py" in script
     assert "ranker_best.pt" in script
+    assert "build_counterfactual_teacher.py" in script
+    assert "counterfactual_teacher.jsonl" in script
+    assert "--ranker-risk-penalty-weight" in script
     assert "bucket_report.py" in script
     assert "train_awr.py" in script
     assert "candidate_gate.py" in script
@@ -283,6 +286,12 @@ def test_policy_improvement_pipeline_runs_large_promotion_matrix_only_after_sele
             "ranker_lr": 1e-5,
             "ranker_temperature": 1.5,
             "ranker_top1_weight": 0.1,
+            "ranker_risk_penalty_weight": 0.1,
+            "teacher_prior_weight": 0.25,
+            "teacher_safety_weight": 0.10,
+            "teacher_logit_weight": 1.0,
+            "teacher_min_count": 5,
+            "teacher_max_score_delta": 0.35,
             "awr_epochs": 1,
             "awr_lr": 1e-5,
             "awr_temperature": 1.0,
@@ -297,6 +306,7 @@ def test_policy_improvement_pipeline_runs_large_promotion_matrix_only_after_sele
         lambda _config_dir, iter_dir, _jobs: (iter_dir / "trajectories.jsonl", iter_dir / "cf.jsonl"),
     )
     monkeypatch.setattr(pipeline, "run", lambda _cmd: None)
+    monkeypatch.setattr(pipeline, "build_counterfactual_teacher", lambda _cf, _traj, iter_dir, _args: iter_dir / "counterfactual_teacher.jsonl")
     monkeypatch.setattr(pipeline, "train_value_head", lambda _base, _traj, iter_dir, _args: iter_dir / "value.pt")
     monkeypatch.setattr(pipeline, "train_ranker", lambda _base, _cf, iter_dir, _args: iter_dir / "ranker.pt")
     monkeypatch.setattr(pipeline, "run_awr", lambda _ranker, _traj, iter_dir, _args: iter_dir / "awr.pt")
@@ -359,6 +369,12 @@ def test_policy_improvement_pipeline_skips_promotion_matrix_when_selection_fails
             "ranker_lr": 1e-5,
             "ranker_temperature": 1.5,
             "ranker_top1_weight": 0.1,
+            "ranker_risk_penalty_weight": 0.1,
+            "teacher_prior_weight": 0.25,
+            "teacher_safety_weight": 0.10,
+            "teacher_logit_weight": 1.0,
+            "teacher_min_count": 5,
+            "teacher_max_score_delta": 0.35,
             "awr_epochs": 1,
             "awr_lr": 1e-5,
             "awr_temperature": 1.0,
@@ -373,6 +389,7 @@ def test_policy_improvement_pipeline_skips_promotion_matrix_when_selection_fails
         lambda _config_dir, iter_dir, _jobs: (iter_dir / "trajectories.jsonl", iter_dir / "cf.jsonl"),
     )
     monkeypatch.setattr(pipeline, "run", lambda _cmd: None)
+    monkeypatch.setattr(pipeline, "build_counterfactual_teacher", lambda _cf, _traj, iter_dir, _args: iter_dir / "counterfactual_teacher.jsonl")
     monkeypatch.setattr(pipeline, "train_value_head", lambda _base, _traj, iter_dir, _args: iter_dir / "value.pt")
     monkeypatch.setattr(pipeline, "train_ranker", lambda _base, _cf, iter_dir, _args: iter_dir / "ranker.pt")
     monkeypatch.setattr(pipeline, "run_awr", lambda _ranker, _traj, iter_dir, _args: iter_dir / "awr.pt")
