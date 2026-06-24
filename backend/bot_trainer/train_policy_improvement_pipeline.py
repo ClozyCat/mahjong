@@ -24,6 +24,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--trajectory-matches", type=int, default=400)
     parser.add_argument("--trajectory-chunk-matches", type=int, default=50)
     parser.add_argument("--matrix-matches", type=int, default=80)
+    parser.add_argument("--promotion-matrix-matches", type=int, default=400)
     parser.add_argument("--seed", default=datetime.now().strftime("%Y%m%d"))
     parser.add_argument("--sft-onnx", default="backend/assets/sft/sft.onnx")
     parser.add_argument("--sft-checkpoint", default="backend/bot_trainer/v2/checkpoints/best.pt")
@@ -288,8 +289,18 @@ def export_candidate(checkpoint: Path, output: Path) -> None:
     ])
 
 
-def matrix_eval(pool_path: Path, candidate_onnx: Path, iter_dir: Path, args: argparse.Namespace, seed: int) -> list[Path]:
-    config_dir = iter_dir / "matrix_config"
+def matrix_eval(
+    pool_path: Path,
+    candidate_onnx: Path,
+    iter_dir: Path,
+    args: argparse.Namespace,
+    seed: int,
+    *,
+    matches: int,
+    label: str,
+    config_dir_name: str,
+) -> list[Path]:
+    config_dir = iter_dir / config_dir_name
     run([
         sys.executable,
         "backend/bot_trainer/v2/league_config.py",
@@ -298,7 +309,7 @@ def matrix_eval(pool_path: Path, candidate_onnx: Path, iter_dir: Path, args: arg
         "--output-dir",
         str(config_dir),
         "--matches",
-        str(args.matrix_matches),
+        str(matches),
         "--seed",
         str(seed),
         "--mode",
@@ -310,8 +321,8 @@ def matrix_eval(pool_path: Path, candidate_onnx: Path, iter_dir: Path, args: arg
     ])
     summaries: list[Path] = []
     for config_path in sorted(config_dir.glob("matrix_config_*.json")):
-        result_path = iter_dir / f"matrix_result_{config_path.stem}.jsonl"
-        summary_path = iter_dir / f"matrix_summary_{config_path.stem}.json"
+        result_path = iter_dir / f"{label}_matrix_result_{config_path.stem}.jsonl"
+        summary_path = iter_dir / f"{label}_matrix_summary_{config_path.stem}.json"
         run([
             "cargo",
             "run",
@@ -401,11 +412,33 @@ def main() -> None:
         awr_checkpoint = run_awr(ranker_checkpoint, trajectories, iter_dir, args)
         candidate_onnx = iter_dir / "candidate.onnx"
         export_candidate(awr_checkpoint, candidate_onnx)
-        summaries = matrix_eval(pool_path, candidate_onnx, iter_dir, args, iter_seed + 500)
+        summaries = matrix_eval(
+            pool_path,
+            candidate_onnx,
+            iter_dir,
+            args,
+            iter_seed + 500,
+            matches=args.matrix_matches,
+            label="selection",
+            config_dir_name="selection_matrix_config",
+        )
         selection_path = iter_dir / "selection_result.json"
         promotion_path = iter_dir / "promotion_result.json"
         selected = run_gate("selection", summaries, pool_path, selection_path)
-        promoted = run_gate("promotion", summaries, pool_path, promotion_path)
+        promoted = False
+        promotion_summaries: list[Path] = []
+        if selected:
+            promotion_summaries = matrix_eval(
+                pool_path,
+                candidate_onnx,
+                iter_dir,
+                args,
+                iter_seed + 1500,
+                matches=args.promotion_matrix_matches,
+                label="promotion",
+                config_dir_name="promotion_matrix_config",
+            )
+            promoted = run_gate("promotion", promotion_summaries, pool_path, promotion_path)
 
         if selected and selection_path.exists():
             selected_onnx = Path("backend/assets/league") / f"selected_iter_{iteration}" / "policy.onnx"

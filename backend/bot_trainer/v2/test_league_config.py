@@ -185,6 +185,9 @@ def test_policy_improvement_pipeline_uses_counterfactual_ranker_and_gates() -> N
     assert "train_awr.py" in script
     assert "candidate_gate.py" in script
     assert "--gate-mode" in script
+    assert "--promotion-matrix-matches" in script
+    assert "promotion_matrix_config" in script
+    assert "promotion_result.json" in script
     assert "selection" in script and "promotion" in script
 
 
@@ -237,3 +240,151 @@ def test_policy_improvement_pipeline_adds_selected_candidate_without_replacing_l
         "temperature": 1.0,
         "weight": 1,
     }]
+
+
+def test_policy_improvement_pipeline_runs_large_promotion_matrix_only_after_selection(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    pipeline = load_policy_improvement_module()
+    pool_path = tmp_path / "pool.json"
+    pool_path.write_text(
+        """{
+          "learner": {"id": "learner", "model_path": "sft.onnx"},
+          "rollout_opponents": [
+            {"id": "sft", "model_path": "sft.onnx", "sample_actions": true, "temperature": 1.0}
+          ]
+        }""",
+        encoding="utf-8",
+    )
+    output_dir = tmp_path / "out"
+    calls = []
+
+    monkeypatch.chdir(Path(__file__).resolve().parents[3])
+    monkeypatch.setattr(
+        pipeline,
+        "parse_args",
+        lambda: type("Args", (), {
+            "iterations": 1,
+            "start_iteration": 0,
+            "trajectory_matches": 1,
+            "trajectory_chunk_matches": 1,
+            "matrix_matches": 80,
+            "promotion_matrix_matches": 400,
+            "seed": "20260624",
+            "sft_onnx": "sft.onnx",
+            "sft_checkpoint": "sft.pt",
+            "pool": str(pool_path),
+            "output_dir": str(output_dir),
+            "jobs": 1,
+            "ranker_epochs": 1,
+            "value_epochs": 1,
+            "value_lr": 1e-4,
+            "ranker_lr": 1e-5,
+            "ranker_temperature": 1.5,
+            "ranker_top1_weight": 0.1,
+            "awr_epochs": 1,
+            "awr_lr": 1e-5,
+            "awr_temperature": 1.0,
+            "awr_weight_clip": 6.0,
+            "awr_kl_coef": 0.08,
+        })(),
+    )
+    monkeypatch.setattr(pipeline, "generate_trajectory_configs", lambda *args, **kwargs: None)
+    monkeypatch.setattr(
+        pipeline,
+        "collect_rollouts",
+        lambda _config_dir, iter_dir, _jobs: (iter_dir / "trajectories.jsonl", iter_dir / "cf.jsonl"),
+    )
+    monkeypatch.setattr(pipeline, "run", lambda _cmd: None)
+    monkeypatch.setattr(pipeline, "train_value_head", lambda _base, _traj, iter_dir, _args: iter_dir / "value.pt")
+    monkeypatch.setattr(pipeline, "train_ranker", lambda _base, _cf, iter_dir, _args: iter_dir / "ranker.pt")
+    monkeypatch.setattr(pipeline, "run_awr", lambda _ranker, _traj, iter_dir, _args: iter_dir / "awr.pt")
+    monkeypatch.setattr(pipeline, "export_candidate", lambda _checkpoint, output: output.write_text("onnx"))
+    monkeypatch.setattr(pipeline, "copy_onnx_bundle", lambda _src, dst: dst.parent.mkdir(parents=True, exist_ok=True) or dst.write_text("onnx"))
+
+    def fake_matrix_eval(_pool, _candidate, _iter_dir, _args, _seed, *, matches, label, config_dir_name):
+        calls.append((label, matches, config_dir_name))
+        return [tmp_path / f"{label}.json"]
+
+    monkeypatch.setattr(pipeline, "matrix_eval", fake_matrix_eval)
+    monkeypatch.setattr(pipeline, "run_gate", lambda mode, *_args: mode == "selection")
+
+    pipeline.main()
+
+    assert calls == [
+        ("selection", 80, "selection_matrix_config"),
+        ("promotion", 400, "promotion_matrix_config"),
+    ]
+
+
+def test_policy_improvement_pipeline_skips_promotion_matrix_when_selection_fails(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    pipeline = load_policy_improvement_module()
+    pool_path = tmp_path / "pool.json"
+    pool_path.write_text(
+        """{
+          "learner": {"id": "learner", "model_path": "sft.onnx"},
+          "rollout_opponents": [
+            {"id": "sft", "model_path": "sft.onnx"}
+          ]
+        }""",
+        encoding="utf-8",
+    )
+    output_dir = tmp_path / "out"
+    calls = []
+
+    monkeypatch.chdir(Path(__file__).resolve().parents[3])
+    monkeypatch.setattr(
+        pipeline,
+        "parse_args",
+        lambda: type("Args", (), {
+            "iterations": 1,
+            "start_iteration": 0,
+            "trajectory_matches": 1,
+            "trajectory_chunk_matches": 1,
+            "matrix_matches": 80,
+            "promotion_matrix_matches": 400,
+            "seed": "20260624",
+            "sft_onnx": "sft.onnx",
+            "sft_checkpoint": "sft.pt",
+            "pool": str(pool_path),
+            "output_dir": str(output_dir),
+            "jobs": 1,
+            "ranker_epochs": 1,
+            "value_epochs": 1,
+            "value_lr": 1e-4,
+            "ranker_lr": 1e-5,
+            "ranker_temperature": 1.5,
+            "ranker_top1_weight": 0.1,
+            "awr_epochs": 1,
+            "awr_lr": 1e-5,
+            "awr_temperature": 1.0,
+            "awr_weight_clip": 6.0,
+            "awr_kl_coef": 0.08,
+        })(),
+    )
+    monkeypatch.setattr(pipeline, "generate_trajectory_configs", lambda *args, **kwargs: None)
+    monkeypatch.setattr(
+        pipeline,
+        "collect_rollouts",
+        lambda _config_dir, iter_dir, _jobs: (iter_dir / "trajectories.jsonl", iter_dir / "cf.jsonl"),
+    )
+    monkeypatch.setattr(pipeline, "run", lambda _cmd: None)
+    monkeypatch.setattr(pipeline, "train_value_head", lambda _base, _traj, iter_dir, _args: iter_dir / "value.pt")
+    monkeypatch.setattr(pipeline, "train_ranker", lambda _base, _cf, iter_dir, _args: iter_dir / "ranker.pt")
+    monkeypatch.setattr(pipeline, "run_awr", lambda _ranker, _traj, iter_dir, _args: iter_dir / "awr.pt")
+    monkeypatch.setattr(pipeline, "export_candidate", lambda _checkpoint, output: output.write_text("onnx"))
+
+    def fake_matrix_eval(_pool, _candidate, _iter_dir, _args, _seed, *, matches, label, config_dir_name):
+        calls.append((label, matches, config_dir_name))
+        return [tmp_path / f"{label}.json"]
+
+    monkeypatch.setattr(pipeline, "matrix_eval", fake_matrix_eval)
+    monkeypatch.setattr(pipeline, "run_gate", lambda _mode, *_args: False)
+
+    pipeline.main()
+
+    assert calls == [("selection", 80, "selection_matrix_config")]
