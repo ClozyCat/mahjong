@@ -52,7 +52,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--dpo-temperature", type=float, default=1.0)
     parser.add_argument("--dpo-kl-coef", type=float, default=0.05)
     parser.add_argument("--dpo-risk-penalty-weight", type=float, default=0.0)
-    parser.add_argument("--dpo-expert-source", default="sft_logits")
+    parser.add_argument("--dpo-expert-source", default="shanten_lookahead")
     return parser.parse_args()
 
 
@@ -129,8 +129,9 @@ def generate_trajectory_configs(
     chunk_matches: int,
     seed: int,
     rollout_onnx: Path,
+    expert_source: str | None = None,
 ) -> None:
-    run([
+    cmd = [
         sys.executable,
         "backend/bot_trainer/v2/league_config.py",
         "--pool",
@@ -147,7 +148,10 @@ def generate_trajectory_configs(
         str(chunk_matches),
         "--rollout-onnx",
         str(rollout_onnx),
-    ])
+    ]
+    if expert_source:
+        cmd.extend(["--expert-source", expert_source])
+    run(cmd)
 
 
 def collect_rollouts(
@@ -353,6 +357,7 @@ def main() -> None:
             args.trajectory_chunk_matches,
             iter_seed,
             accepted_onnx,
+            args.dpo_expert_source,
         )
         trajectories, counterfactual_discards = collect_rollouts(iter_dir / "configs", iter_dir, args.jobs)
         run([

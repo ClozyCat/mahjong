@@ -122,7 +122,7 @@ fn tile_counts_for_tile_keys(tile_keys: &[String]) -> Option<[u8; TILE_KIND_COUN
     Some(counts)
 }
 
-fn qualifying_fan_potential(
+pub(crate) fn qualifying_fan_potential(
     concealed_tile_keys: &[String],
     meld_tile_key_groups: &[Vec<String>],
     shanten: i32,

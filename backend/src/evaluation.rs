@@ -27,6 +27,8 @@ pub struct EvaluationArenaConfig {
     pub report_trajectories: bool,
     pub subjects: Vec<EvaluationSubjectPolicyConfig>,
     pub opponents: Vec<ArenaBotPolicyConfig>,
+    #[serde(default)]
+    pub expert_source: Option<String>,
 }
 
 #[derive(Clone, Debug, Default, Deserialize, Serialize, PartialEq, Eq)]
@@ -75,6 +77,7 @@ impl EvaluationArenaConfig {
                 })
                 .collect(),
             opponents,
+            expert_source: None,
         };
         config.validate()?;
         Ok(config)

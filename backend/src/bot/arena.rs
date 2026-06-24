@@ -685,6 +685,7 @@ fn run_evaluation_arena_match(
                         counterfactual_discards.len() as u64,
                         &policy,
                         trace,
+                        config.expert_source.as_deref(),
                     ) {
                         counterfactual_discards.push(row);
                     }
@@ -962,6 +963,7 @@ fn counterfactual_discard_row_from_trace(
     decision_index: u64,
     policy: &ArenaBotPolicyConfig,
     trace: &crate::rules::standard::automation::BotDecisionTrace,
+    expert_source: Option<&str>,
 ) -> Option<CounterfactualDiscardRow> {
     if trace.decision_kind != "active_turn" || trace.action.action_type != "discard" {
         return None;
@@ -970,23 +972,49 @@ fn counterfactual_discard_row_from_trace(
         .features
         .clone()
         .unwrap_or_else(|| encode_bot_context_v2(&trace.context));
-    let scores = trace.neural_scores.as_ref()?;
-    let risk_config = super::policy::RiskConfig::from_arena_config(policy);
-    let logits = risk_adjusted_discard_logits(scores, Some(&risk_config));
-    let mut legal_discards = Vec::new();
-    let mut teacher_scores = Vec::new();
-    let mut risk_scores = Vec::new();
-    for (index, allowed) in features.discard_mask.iter().enumerate() {
-        if *allowed && logits[index].is_finite() {
-            legal_discards.push(index);
-            teacher_scores.push(logits[index]);
-            risk_scores.push(sigmoid_probability(scores.risk_logits[index]).unwrap_or(0.0));
+
+    let (teacher_scores_vec, risk_scores_vec, legal_discards) = match expert_source {
+        Some("shanten_lookahead") => {
+            let (expert_scores, legal) = super::search::shanten_expert_discard_scores(
+                &trace.context,
+                &features.discard_mask,
+            );
+            let mut legal_discards = Vec::new();
+            let mut teacher_scores = Vec::new();
+            let mut risk_scores = Vec::new();
+            let scores = trace.neural_scores.as_ref();
+            for &tile_index in &legal {
+                legal_discards.push(tile_index);
+                teacher_scores.push(expert_scores[tile_index]);
+                let risk = scores
+                    .map(|s| sigmoid_probability(s.risk_logits[tile_index]).unwrap_or(0.0))
+                    .unwrap_or(0.0);
+                risk_scores.push(risk);
+            }
+            (teacher_scores, risk_scores, legal_discards)
         }
-    }
+        _ => {
+            let scores = trace.neural_scores.as_ref()?;
+            let risk_config = super::policy::RiskConfig::from_arena_config(policy);
+            let logits = risk_adjusted_discard_logits(scores, Some(&risk_config));
+            let mut legal_discards = Vec::new();
+            let mut teacher_scores = Vec::new();
+            let mut risk_scores = Vec::new();
+            for (index, allowed) in features.discard_mask.iter().enumerate() {
+                if *allowed && logits[index].is_finite() {
+                    legal_discards.push(index);
+                    teacher_scores.push(logits[index]);
+                    risk_scores.push(sigmoid_probability(scores.risk_logits[index]).unwrap_or(0.0));
+                }
+            }
+            (teacher_scores, risk_scores, legal_discards)
+        }
+    };
+
     if legal_discards.is_empty() {
         return None;
     }
-    let best_offset = teacher_scores
+    let best_offset = teacher_scores_vec
         .iter()
         .enumerate()
         .max_by(|(_, left), (_, right)| left.total_cmp(right))?
@@ -1002,11 +1030,15 @@ fn counterfactual_discard_row_from_trace(
         discard_sequence: features.discard_sequence,
         discard_mask: features.discard_mask.to_vec(),
         legal_discards: legal_discards.clone(),
-        teacher_scores,
-        risk_scores,
+        teacher_scores: teacher_scores_vec,
+        risk_scores: risk_scores_vec,
         teacher_best_index: legal_discards[best_offset],
         phase_bucket: phase_bucket_for_wall(trace.context.wall_tiles_remaining),
-        risk_bucket: risk_bucket_for_scores(scores),
+        risk_bucket: trace
+            .neural_scores
+            .as_ref()
+            .map(risk_bucket_for_scores)
+            .unwrap_or_else(|| "unknown".to_string()),
     })
 }
 
@@ -1410,6 +1442,7 @@ mod tests {
                 test_policy("opponent-2"),
                 test_policy("opponent-3"),
             ],
+            expert_source: None,
         };
 
         let error = run_evaluation_arena(&config, false).expect_err("missing model must fail");
@@ -1542,6 +1575,7 @@ mod tests {
                 test_policy("opponent-2"),
                 test_policy("opponent-3"),
             ],
+            expert_source: None,
         };
 
         let specs = evaluation_replica_specs(&config);
@@ -1599,6 +1633,7 @@ mod tests {
                 test_policy("opponent-2"),
                 test_policy("opponent-3"),
             ],
+            expert_source: None,
         };
         let specs = evaluation_replica_specs(&config);
 
@@ -2000,7 +2035,7 @@ mod tests {
         let policy = test_policy("learner");
 
         let row =
-            counterfactual_discard_row_from_trace("arena-test", 7, &policy, &trace).expect("row");
+            counterfactual_discard_row_from_trace("arena-test", 7, &policy, &trace, None).expect("row");
 
         assert_eq!(row.schema_version, 1);
         assert_eq!(row.decision_index, 7);

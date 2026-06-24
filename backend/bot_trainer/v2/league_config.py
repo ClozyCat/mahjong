@@ -28,6 +28,11 @@ def parse_args() -> argparse.Namespace:
         type=Path,
         default=Path("backend/assets/sft/sft.onnx"),
     )
+    parser.add_argument(
+        "--expert-source",
+        default=None,
+        help="Expert source for counterfactual teacher_scores (e.g. 'shanten_lookahead')",
+    )
     return parser.parse_args()
 
 
@@ -119,6 +124,7 @@ def build_trajectory_configs(
     seed: int,
     max_actions: int,
     chunk_matches: int = 0,
+    expert_source: str | None = None,
 ) -> list[dict[str, Any]]:
     learner = clean_policy(pool["learner"])
     learner["sample_actions"] = True
@@ -146,6 +152,7 @@ def build_trajectory_configs(
             "report_trajectories": True,
             "subjects": [learner_subject],
             "opponents": opponents,
+            **({"expert_source": expert_source} if expert_source else {}),
         })
         remaining -= current_matches
         chunk_index += 1
@@ -257,6 +264,7 @@ def main() -> None:
                 args.seed,
                 args.max_actions,
                 args.trajectory_chunk_matches,
+                args.expert_source,
             )
         ):
             write_json(args.output_dir / f"trajectory_config_{index}.json", config)
