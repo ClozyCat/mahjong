@@ -170,31 +170,31 @@ def test_matrix_config_compares_baseline_and_candidate_against_three_opponents()
     assert all("weight" not in opponent for opponent in config["opponents"])
 
 
-def test_policy_improvement_pipeline_uses_counterfactual_ranker_and_gates() -> None:
+def test_policy_improvement_pipeline_uses_dpo_and_gates() -> None:
     script_path = Path(__file__).resolve().parent.parent / "train_policy_improvement_pipeline.py"
     script = script_path.read_text(encoding="utf-8")
 
     assert "--counterfactual-discards" in script
     assert "counterfactual_discards.jsonl" in script
-    assert "train_value.py" in script
-    assert "value_pretrained.pt" in script
     assert "--start-iteration" in script
-    assert "train_discard_ranker.py" in script
-    assert "ranker_best.pt" in script
-    assert "build_counterfactual_teacher.py" in script
-    assert "counterfactual_teacher.jsonl" in script
-    assert "--ranker-risk-penalty-weight" in script
-    assert "policy_guard.py" in script
-    assert "ranker_policy_guard.json" in script
-    assert "awr_policy_guard.json" in script
+    assert "train_dpo.py" in script
+    assert "dpo_best.pt" in script
+    assert "--dpo-epochs" in script
+    assert "--dpo-beta" in script
+    assert "--dpo-expert-source" in script
     assert "bucket_report.py" in script
-    assert "train_awr.py" in script
+    assert "export_onnx.py" in script
     assert "candidate_gate.py" in script
     assert "--gate-mode" in script
     assert "--promotion-matrix-matches" in script
     assert "promotion_matrix_config" in script
     assert "promotion_result.json" in script
     assert "selection" in script and "promotion" in script
+    assert "train_value.py" not in script
+    assert "train_awr.py" not in script
+    assert "policy_guard.py" not in script
+    assert "build_counterfactual_teacher.py" not in script
+    assert "train_discard_ranker.py" not in script
 
 
 def test_policy_improvement_pipeline_updates_pool_after_promotion(tmp_path: Path) -> None:
@@ -248,6 +248,30 @@ def test_policy_improvement_pipeline_adds_selected_candidate_without_replacing_l
     }]
 
 
+def _make_dpo_pipeline_args(pool_path, output_dir):
+    return type("Args", (), {
+        "iterations": 1,
+        "start_iteration": 0,
+        "trajectory_matches": 1,
+        "trajectory_chunk_matches": 1,
+        "matrix_matches": 80,
+        "promotion_matrix_matches": 400,
+        "seed": "20260624",
+        "sft_onnx": "sft.onnx",
+        "sft_checkpoint": "sft.pt",
+        "pool": str(pool_path),
+        "output_dir": str(output_dir),
+        "jobs": 1,
+        "dpo_epochs": 1,
+        "dpo_lr": 2e-5,
+        "dpo_beta": 0.5,
+        "dpo_temperature": 1.0,
+        "dpo_kl_coef": 0.05,
+        "dpo_risk_penalty_weight": 0.0,
+        "dpo_expert_source": "sft_logits",
+    })()
+
+
 def test_policy_improvement_pipeline_runs_large_promotion_matrix_only_after_selection(
     tmp_path: Path,
     monkeypatch,
@@ -267,43 +291,7 @@ def test_policy_improvement_pipeline_runs_large_promotion_matrix_only_after_sele
     calls = []
 
     monkeypatch.chdir(Path(__file__).resolve().parents[3])
-    monkeypatch.setattr(
-        pipeline,
-        "parse_args",
-        lambda: type("Args", (), {
-            "iterations": 1,
-            "start_iteration": 0,
-            "trajectory_matches": 1,
-            "trajectory_chunk_matches": 1,
-            "matrix_matches": 80,
-            "promotion_matrix_matches": 400,
-            "seed": "20260624",
-            "sft_onnx": "sft.onnx",
-            "sft_checkpoint": "sft.pt",
-            "pool": str(pool_path),
-            "output_dir": str(output_dir),
-            "jobs": 1,
-            "ranker_epochs": 1,
-            "value_epochs": 1,
-            "value_lr": 1e-4,
-            "ranker_lr": 1e-5,
-            "ranker_temperature": 1.5,
-            "ranker_top1_weight": 0.1,
-            "ranker_risk_penalty_weight": 0.1,
-            "teacher_prior_weight": 0.25,
-            "teacher_safety_weight": 0.10,
-            "teacher_logit_weight": 1.0,
-            "teacher_min_count": 5,
-            "teacher_max_score_delta": 0.35,
-            "awr_epochs": 1,
-            "awr_lr": 1e-5,
-            "awr_temperature": 1.0,
-            "awr_weight_clip": 6.0,
-            "awr_kl_coef": 0.08,
-            "policy_guard_max_kl": 0.03,
-            "policy_guard_min_top1_delta": -0.002,
-        })(),
-    )
+    monkeypatch.setattr(pipeline, "parse_args", lambda: _make_dpo_pipeline_args(pool_path, output_dir))
     monkeypatch.setattr(pipeline, "generate_trajectory_configs", lambda *args, **kwargs: None)
     monkeypatch.setattr(
         pipeline,
@@ -311,11 +299,7 @@ def test_policy_improvement_pipeline_runs_large_promotion_matrix_only_after_sele
         lambda _config_dir, iter_dir, _jobs: (iter_dir / "trajectories.jsonl", iter_dir / "cf.jsonl"),
     )
     monkeypatch.setattr(pipeline, "run", lambda _cmd: None)
-    monkeypatch.setattr(pipeline, "build_counterfactual_teacher", lambda _cf, _traj, iter_dir, _args: iter_dir / "counterfactual_teacher.jsonl")
-    monkeypatch.setattr(pipeline, "train_value_head", lambda _base, _traj, iter_dir, _args: iter_dir / "value.pt")
-    monkeypatch.setattr(pipeline, "train_ranker", lambda _base, _cf, iter_dir, _args: iter_dir / "ranker.pt")
-    monkeypatch.setattr(pipeline, "policy_guard", lambda *_args, **_kwargs: True)
-    monkeypatch.setattr(pipeline, "run_awr", lambda _ranker, _traj, iter_dir, _args: iter_dir / "awr.pt")
+    monkeypatch.setattr(pipeline, "train_dpo", lambda _base, _cf, iter_dir, _args: iter_dir / "dpo.pt")
     monkeypatch.setattr(pipeline, "export_candidate", lambda _checkpoint, output: output.write_text("onnx"))
     monkeypatch.setattr(pipeline, "copy_onnx_bundle", lambda _src, dst: dst.parent.mkdir(parents=True, exist_ok=True) or dst.write_text("onnx"))
 
@@ -353,43 +337,7 @@ def test_policy_improvement_pipeline_skips_promotion_matrix_when_selection_fails
     calls = []
 
     monkeypatch.chdir(Path(__file__).resolve().parents[3])
-    monkeypatch.setattr(
-        pipeline,
-        "parse_args",
-        lambda: type("Args", (), {
-            "iterations": 1,
-            "start_iteration": 0,
-            "trajectory_matches": 1,
-            "trajectory_chunk_matches": 1,
-            "matrix_matches": 80,
-            "promotion_matrix_matches": 400,
-            "seed": "20260624",
-            "sft_onnx": "sft.onnx",
-            "sft_checkpoint": "sft.pt",
-            "pool": str(pool_path),
-            "output_dir": str(output_dir),
-            "jobs": 1,
-            "ranker_epochs": 1,
-            "value_epochs": 1,
-            "value_lr": 1e-4,
-            "ranker_lr": 1e-5,
-            "ranker_temperature": 1.5,
-            "ranker_top1_weight": 0.1,
-            "ranker_risk_penalty_weight": 0.1,
-            "teacher_prior_weight": 0.25,
-            "teacher_safety_weight": 0.10,
-            "teacher_logit_weight": 1.0,
-            "teacher_min_count": 5,
-            "teacher_max_score_delta": 0.35,
-            "awr_epochs": 1,
-            "awr_lr": 1e-5,
-            "awr_temperature": 1.0,
-            "awr_weight_clip": 6.0,
-            "awr_kl_coef": 0.08,
-            "policy_guard_max_kl": 0.03,
-            "policy_guard_min_top1_delta": -0.002,
-        })(),
-    )
+    monkeypatch.setattr(pipeline, "parse_args", lambda: _make_dpo_pipeline_args(pool_path, output_dir))
     monkeypatch.setattr(pipeline, "generate_trajectory_configs", lambda *args, **kwargs: None)
     monkeypatch.setattr(
         pipeline,
@@ -397,11 +345,7 @@ def test_policy_improvement_pipeline_skips_promotion_matrix_when_selection_fails
         lambda _config_dir, iter_dir, _jobs: (iter_dir / "trajectories.jsonl", iter_dir / "cf.jsonl"),
     )
     monkeypatch.setattr(pipeline, "run", lambda _cmd: None)
-    monkeypatch.setattr(pipeline, "build_counterfactual_teacher", lambda _cf, _traj, iter_dir, _args: iter_dir / "counterfactual_teacher.jsonl")
-    monkeypatch.setattr(pipeline, "train_value_head", lambda _base, _traj, iter_dir, _args: iter_dir / "value.pt")
-    monkeypatch.setattr(pipeline, "train_ranker", lambda _base, _cf, iter_dir, _args: iter_dir / "ranker.pt")
-    monkeypatch.setattr(pipeline, "policy_guard", lambda *_args, **_kwargs: True)
-    monkeypatch.setattr(pipeline, "run_awr", lambda _ranker, _traj, iter_dir, _args: iter_dir / "awr.pt")
+    monkeypatch.setattr(pipeline, "train_dpo", lambda _base, _cf, iter_dir, _args: iter_dir / "dpo.pt")
     monkeypatch.setattr(pipeline, "export_candidate", lambda _checkpoint, output: output.write_text("onnx"))
 
     def fake_matrix_eval(_pool, _candidate, _iter_dir, _args, _seed, *, matches, label, config_dir_name):
@@ -416,10 +360,11 @@ def test_policy_improvement_pipeline_skips_promotion_matrix_when_selection_fails
     assert calls == [("selection", 80, "selection_matrix_config")]
 
 
-def test_policy_improvement_pipeline_skips_matrix_when_offline_guards_reject_all_policy_updates(
+def test_policy_improvement_pipeline_always_runs_selection_matrix_without_offline_guards(
     tmp_path: Path,
     monkeypatch,
 ) -> None:
+    """Without offline policy guards, every DPO candidate reaches arena evaluation."""
     pipeline = load_policy_improvement_module()
     pool_path = tmp_path / "pool.json"
     pool_path.write_text(
@@ -435,43 +380,7 @@ def test_policy_improvement_pipeline_skips_matrix_when_offline_guards_reject_all
     calls = []
 
     monkeypatch.chdir(Path(__file__).resolve().parents[3])
-    monkeypatch.setattr(
-        pipeline,
-        "parse_args",
-        lambda: type("Args", (), {
-            "iterations": 1,
-            "start_iteration": 0,
-            "trajectory_matches": 1,
-            "trajectory_chunk_matches": 1,
-            "matrix_matches": 80,
-            "promotion_matrix_matches": 400,
-            "seed": "20260624",
-            "sft_onnx": "sft.onnx",
-            "sft_checkpoint": "sft.pt",
-            "pool": str(pool_path),
-            "output_dir": str(output_dir),
-            "jobs": 1,
-            "ranker_epochs": 1,
-            "value_epochs": 1,
-            "value_lr": 1e-4,
-            "ranker_lr": 1e-5,
-            "ranker_temperature": 1.5,
-            "ranker_top1_weight": 0.1,
-            "ranker_risk_penalty_weight": 0.1,
-            "teacher_prior_weight": 0.25,
-            "teacher_safety_weight": 0.10,
-            "teacher_logit_weight": 1.0,
-            "teacher_min_count": 5,
-            "teacher_max_score_delta": 0.35,
-            "awr_epochs": 1,
-            "awr_lr": 1e-5,
-            "awr_temperature": 1.0,
-            "awr_weight_clip": 6.0,
-            "awr_kl_coef": 0.08,
-            "policy_guard_max_kl": 0.03,
-            "policy_guard_min_top1_delta": -0.002,
-        })(),
-    )
+    monkeypatch.setattr(pipeline, "parse_args", lambda: _make_dpo_pipeline_args(pool_path, output_dir))
     monkeypatch.setattr(pipeline, "generate_trajectory_configs", lambda *args, **kwargs: None)
     monkeypatch.setattr(
         pipeline,
@@ -479,18 +388,16 @@ def test_policy_improvement_pipeline_skips_matrix_when_offline_guards_reject_all
         lambda _config_dir, iter_dir, _jobs: (iter_dir / "trajectories.jsonl", iter_dir / "cf.jsonl"),
     )
     monkeypatch.setattr(pipeline, "run", lambda _cmd: None)
-    monkeypatch.setattr(pipeline, "build_counterfactual_teacher", lambda _cf, _traj, iter_dir, _args: iter_dir / "counterfactual_teacher.jsonl")
-    monkeypatch.setattr(pipeline, "train_value_head", lambda _base, _traj, iter_dir, _args: iter_dir / "value.pt")
-    monkeypatch.setattr(pipeline, "train_ranker", lambda _base, _cf, iter_dir, _args: iter_dir / "ranker.pt")
-    monkeypatch.setattr(pipeline, "policy_guard", lambda *_args, **_kwargs: False)
-    monkeypatch.setattr(pipeline, "run_awr", lambda ranker, _traj, _iter_dir, _args: ranker)
+    monkeypatch.setattr(pipeline, "train_dpo", lambda _base, _cf, iter_dir, _args: iter_dir / "dpo.pt")
+    monkeypatch.setattr(pipeline, "export_candidate", lambda _checkpoint, output: output.write_text("onnx"))
 
     def fake_matrix_eval(*_args, **_kwargs):
         calls.append("matrix")
-        return []
+        return [tmp_path / "summary.json"]
 
     monkeypatch.setattr(pipeline, "matrix_eval", fake_matrix_eval)
+    monkeypatch.setattr(pipeline, "run_gate", lambda _mode, *_args: False)
 
     pipeline.main()
 
-    assert calls == []
+    assert len(calls) >= 1

@@ -1,4 +1,18 @@
 #!/usr/bin/env python3
+"""Policy improvement pipeline (DPO-based).
+
+Per-iteration loop:
+  1. Generate league trajectory configs
+  2. Collect rollouts (trajectories + counterfactual discards)
+  3. Train DPO on counterfactual discard preferences
+  4. Export ONNX candidate
+  5. Arena matrix evaluation
+  6. Candidate gate (selection / promotion)
+
+The offline policy guard has been removed — the arena gate is the sole
+quality checkpoint.  This ensures every trained candidate gets a real
+evaluated, rather than being silently blocked by a proxy metric.
+"""
 from __future__ import annotations
 
 import argparse
@@ -18,7 +32,7 @@ from candidate_bank import CandidateRecord, load_candidate_bank, save_candidate_
 
 
 def parse_args() -> argparse.Namespace:
-    parser = argparse.ArgumentParser(description="Policy improvement pipeline")
+    parser = argparse.ArgumentParser(description="Policy improvement pipeline (DPO)")
     parser.add_argument("--iterations", type=int, default=3)
     parser.add_argument("--start-iteration", type=int, default=0)
     parser.add_argument("--trajectory-matches", type=int, default=400)
@@ -31,25 +45,14 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--pool", default="backend/bot_trainer/v2/opponent_pool.json")
     parser.add_argument("--output-dir", default="output/policy_improvement")
     parser.add_argument("--jobs", type=int, default=4)
-    parser.add_argument("--ranker-epochs", type=int, default=2)
-    parser.add_argument("--value-epochs", type=int, default=12)
-    parser.add_argument("--value-lr", type=float, default=5e-4)
-    parser.add_argument("--ranker-lr", type=float, default=1e-5)
-    parser.add_argument("--ranker-temperature", type=float, default=1.5)
-    parser.add_argument("--ranker-top1-weight", type=float, default=0.1)
-    parser.add_argument("--ranker-risk-penalty-weight", type=float, default=0.1)
-    parser.add_argument("--teacher-prior-weight", type=float, default=0.25)
-    parser.add_argument("--teacher-safety-weight", type=float, default=0.10)
-    parser.add_argument("--teacher-logit-weight", type=float, default=1.0)
-    parser.add_argument("--teacher-min-count", type=int, default=5)
-    parser.add_argument("--teacher-max-score-delta", type=float, default=0.35)
-    parser.add_argument("--awr-epochs", type=int, default=2)
-    parser.add_argument("--awr-lr", type=float, default=5e-6)
-    parser.add_argument("--awr-temperature", type=float, default=1.0)
-    parser.add_argument("--awr-weight-clip", type=float, default=6.0)
-    parser.add_argument("--awr-kl-coef", type=float, default=0.08)
-    parser.add_argument("--policy-guard-max-kl", type=float, default=0.03)
-    parser.add_argument("--policy-guard-min-top1-delta", type=float, default=-0.002)
+    # DPO hyperparameters
+    parser.add_argument("--dpo-epochs", type=int, default=3)
+    parser.add_argument("--dpo-lr", type=float, default=2e-5)
+    parser.add_argument("--dpo-beta", type=float, default=0.5)
+    parser.add_argument("--dpo-temperature", type=float, default=1.0)
+    parser.add_argument("--dpo-kl-coef", type=float, default=0.05)
+    parser.add_argument("--dpo-risk-penalty-weight", type=float, default=0.0)
+    parser.add_argument("--dpo-expert-source", default="sft_logits")
     return parser.parse_args()
 
 
@@ -195,160 +198,40 @@ def append_file(src: Path, dst: Path) -> None:
         shutil.copyfileobj(reader, writer)
 
 
-def train_ranker(base_checkpoint: Path, counterfactual_discards: Path, iter_dir: Path, args: argparse.Namespace) -> Path:
-    ranker_checkpoint = iter_dir / "ranker_best.pt"
-    run([
-        sys.executable,
-        "backend/bot_trainer/v2/train_discard_ranker.py",
-        "--checkpoint",
-        str(base_checkpoint),
-        "--counterfactual-discards",
-        str(counterfactual_discards),
-        "--output",
-        str(ranker_checkpoint),
-        "--epochs",
-        str(args.ranker_epochs),
-        "--lr",
-        str(args.ranker_lr),
-        "--temperature",
-        str(args.ranker_temperature),
-        "--top1-weight",
-        str(args.ranker_top1_weight),
-        "--risk-penalty-weight",
-        str(args.ranker_risk_penalty_weight),
-        "--policy-id",
-        "learner",
-    ])
-    return ranker_checkpoint
-
-
-def policy_guard(
-    baseline_checkpoint: Path,
-    candidate_checkpoint: Path,
+def train_dpo(
+    base_checkpoint: Path,
     counterfactual_discards: Path,
-    output: Path,
-    args: argparse.Namespace,
-) -> bool:
-    try:
-        run([
-            sys.executable,
-            "backend/bot_trainer/v2/policy_guard.py",
-            "--baseline-checkpoint",
-            str(baseline_checkpoint),
-            "--candidate-checkpoint",
-            str(candidate_checkpoint),
-            "--counterfactual-discards",
-            str(counterfactual_discards),
-            "--output",
-            str(output),
-            "--policy-id",
-            "learner",
-            "--max-kl",
-            str(args.policy_guard_max_kl),
-            "--min-top1-delta",
-            str(args.policy_guard_min_top1_delta),
-        ])
-        return True
-    except subprocess.CalledProcessError:
-        return False
-
-
-def build_counterfactual_teacher(
-    counterfactual_discards: Path,
-    trajectories: Path,
     iter_dir: Path,
     args: argparse.Namespace,
 ) -> Path:
-    teacher_path = iter_dir / "counterfactual_teacher.jsonl"
+    dpo_checkpoint = iter_dir / "dpo_best.pt"
     run([
         sys.executable,
-        "backend/bot_trainer/v2/build_counterfactual_teacher.py",
+        "backend/bot_trainer/v2/train_dpo.py",
         "--counterfactual-discards",
         str(counterfactual_discards),
-        "--trajectories",
-        str(trajectories),
-        "--output",
-        str(teacher_path),
-        "--policy-id",
-        "learner",
-        "--prior-weight",
-        str(args.teacher_prior_weight),
-        "--safety-weight",
-        str(args.teacher_safety_weight),
-        "--teacher-logit-weight",
-        str(args.teacher_logit_weight),
-        "--min-count",
-        str(args.teacher_min_count),
-        "--max-score-delta",
-        str(args.teacher_max_score_delta),
-    ])
-    return teacher_path
-
-
-def train_value_head(base_checkpoint: Path, trajectories: Path, iter_dir: Path, args: argparse.Namespace) -> Path:
-    value_checkpoint = iter_dir / "value_pretrained.pt"
-    run([
-        sys.executable,
-        "backend/bot_trainer/v2/train_value.py",
-        "--trajectories",
-        str(trajectories),
         "--checkpoint",
         str(base_checkpoint),
         "--output",
-        str(value_checkpoint),
+        str(dpo_checkpoint),
         "--epochs",
-        str(args.value_epochs),
-        "--batch-size",
-        "512",
+        str(args.dpo_epochs),
         "--lr",
-        str(args.value_lr),
-        "--early-stop-patience",
-        "4",
-        "--policy-id",
-        "learner",
-    ])
-    return value_checkpoint
-
-
-def run_awr(ranker_checkpoint: Path, trajectories: Path, iter_dir: Path, args: argparse.Namespace) -> Path:
-    awr_dir = iter_dir / "awr_checkpoints"
-    run([
-        sys.executable,
-        "backend/bot_trainer/v2/train_awr.py",
-        "--trajectories",
-        str(trajectories),
-        "--checkpoint",
-        str(ranker_checkpoint),
-        "--output-dir",
-        str(awr_dir),
-        "--epochs",
-        str(args.awr_epochs),
-        "--value-finetune-epochs",
-        "0",
-        "--batch-size",
-        "512",
-        "--lr",
-        str(args.awr_lr),
+        str(args.dpo_lr),
+        "--beta",
+        str(args.dpo_beta),
         "--temperature",
-        str(args.awr_temperature),
-        "--weight-clip",
-        str(args.awr_weight_clip),
-        "--adv-norm",
-        "batch",
-        "--adv-source",
-        "value",
-        "--value-loss-coef",
-        "0.0",
+        str(args.dpo_temperature),
         "--kl-coef",
-        str(args.awr_kl_coef),
-        "--sft-checkpoint",
-        args.sft_checkpoint,
-        "--risk-value-checkpoint",
-        args.sft_checkpoint,
+        str(args.dpo_kl_coef),
+        "--risk-penalty-weight",
+        str(args.dpo_risk_penalty_weight),
+        "--expert-source",
+        args.dpo_expert_source,
         "--policy-id",
         "learner",
     ])
-    return awr_dir / "awr_best.pt"
+    return dpo_checkpoint
 
 
 def export_candidate(checkpoint: Path, output: Path) -> None:
@@ -480,33 +363,9 @@ def main() -> None:
             "--output",
             str(iter_dir / "bucket_report.json"),
         ])
-        counterfactual_teacher = build_counterfactual_teacher(counterfactual_discards, trajectories, iter_dir, args)
-        value_checkpoint = train_value_head(base_checkpoint, trajectories, iter_dir, args)
-        ranker_checkpoint = train_ranker(value_checkpoint, counterfactual_teacher, iter_dir, args)
-        if not policy_guard(
-            value_checkpoint,
-            ranker_checkpoint,
-            counterfactual_teacher,
-            iter_dir / "ranker_policy_guard.json",
-            args,
-        ):
-            print("Ranker policy guard rejected candidate; using value checkpoint for AWR")
-            ranker_checkpoint = value_checkpoint
-        awr_checkpoint = run_awr(ranker_checkpoint, trajectories, iter_dir, args)
-        if not policy_guard(
-            ranker_checkpoint,
-            awr_checkpoint,
-            counterfactual_teacher,
-            iter_dir / "awr_policy_guard.json",
-            args,
-        ):
-            print("AWR policy guard rejected candidate; using pre-AWR checkpoint")
-            awr_checkpoint = ranker_checkpoint
-        if awr_checkpoint == value_checkpoint:
-            print("No policy-improving checkpoint survived offline guards; skipping arena selection")
-            continue
+        dpo_checkpoint = train_dpo(base_checkpoint, counterfactual_discards, iter_dir, args)
         candidate_onnx = iter_dir / "candidate.onnx"
-        export_candidate(awr_checkpoint, candidate_onnx)
+        export_candidate(dpo_checkpoint, candidate_onnx)
         summaries = matrix_eval(
             pool_path,
             candidate_onnx,
@@ -541,7 +400,7 @@ def main() -> None:
             update_pool_after_selection(pool_path, selected_onnx.as_posix(), iteration)
             candidate_bank.add(CandidateRecord(
                 iter=iteration,
-                checkpoint=awr_checkpoint.as_posix(),
+                checkpoint=dpo_checkpoint.as_posix(),
                 onnx=selected_onnx.as_posix(),
                 gate_result=load_json(selection_path),
                 selected=True,
@@ -552,7 +411,7 @@ def main() -> None:
             stable_onnx = Path("backend/assets/league") / f"iter_{iteration}" / "policy.onnx"
             copy_onnx_bundle(candidate_onnx, stable_onnx)
             update_pool_after_promotion(pool_path, stable_onnx.as_posix(), iteration)
-            accepted_checkpoint = awr_checkpoint
+            accepted_checkpoint = dpo_checkpoint
             accepted_onnx = stable_onnx
 
 

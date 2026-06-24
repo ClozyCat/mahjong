@@ -7,14 +7,27 @@ from typing import Any
 import torch
 from torch.utils.data import Dataset
 
-from awr_dataset import DISCARD_EVENT_FEATURE_COUNT, DISCARD_SEQUENCE_LENGTH
-
+DISCARD_SEQUENCE_LENGTH = 32
+DISCARD_EVENT_FEATURE_COUNT = 40
 TILE_KIND_COUNT = 34
 
 
 class CounterfactualDiscardDataset(Dataset):
+    """Discard-position preference data for DPO training.
+
+    Each row contains legal discard options with expert preference scores
+    (``teacher_scores``).  The scores can originate from any expert source:
+
+    * SFT logits (baseline, circular self-distillation)
+    * Rollout search (Plan D — 1-ply/2-ply lookahead evaluation)
+    * Any future expert signal
+
+    The trainer is agnostic to the source — it only consumes the ranking
+    implied by ``teacher_scores``.
+    """
+
     def __init__(self, path: Path, policy_id: str | None = None) -> None:
-        self.rows = []
+        self.rows: list[dict[str, Any]] = []
         for line in path.read_text(encoding="utf-8-sig").splitlines():
             if not line.strip():
                 continue
@@ -28,6 +41,10 @@ class CounterfactualDiscardDataset(Dataset):
 
     def __getitem__(self, index: int) -> dict[str, torch.Tensor]:
         return encode_counterfactual_row(self.rows[index])
+
+
+def collate_counterfactual(batch: list[dict[str, torch.Tensor]]) -> dict[str, torch.Tensor]:
+    return {key: torch.stack([item[key] for item in batch]) for key in batch[0]}
 
 
 def encode_counterfactual_row(row: dict[str, Any]) -> dict[str, torch.Tensor]:
@@ -48,7 +65,7 @@ def encode_counterfactual_row(row: dict[str, Any]) -> dict[str, torch.Tensor]:
         risk_scores[tile_index] = risk_score
 
     return {
-        "tile_planes": torch.tensor(row["tile_planes"], dtype=torch.float32).view(-1, 34),
+        "tile_planes": torch.tensor(row["tile_planes"], dtype=torch.float32).view(-1, TILE_KIND_COUNT),
         "scalar_features": torch.tensor(row["scalar_features"], dtype=torch.float32),
         "discard_sequence": torch.tensor(
             row["discard_sequence"],
