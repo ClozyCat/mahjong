@@ -48,6 +48,8 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--awr-temperature", type=float, default=1.0)
     parser.add_argument("--awr-weight-clip", type=float, default=6.0)
     parser.add_argument("--awr-kl-coef", type=float, default=0.08)
+    parser.add_argument("--policy-guard-max-kl", type=float, default=0.03)
+    parser.add_argument("--policy-guard-min-top1-delta", type=float, default=-0.002)
     return parser.parse_args()
 
 
@@ -218,6 +220,37 @@ def train_ranker(base_checkpoint: Path, counterfactual_discards: Path, iter_dir:
         "learner",
     ])
     return ranker_checkpoint
+
+
+def policy_guard(
+    baseline_checkpoint: Path,
+    candidate_checkpoint: Path,
+    counterfactual_discards: Path,
+    output: Path,
+    args: argparse.Namespace,
+) -> bool:
+    try:
+        run([
+            sys.executable,
+            "backend/bot_trainer/v2/policy_guard.py",
+            "--baseline-checkpoint",
+            str(baseline_checkpoint),
+            "--candidate-checkpoint",
+            str(candidate_checkpoint),
+            "--counterfactual-discards",
+            str(counterfactual_discards),
+            "--output",
+            str(output),
+            "--policy-id",
+            "learner",
+            "--max-kl",
+            str(args.policy_guard_max_kl),
+            "--min-top1-delta",
+            str(args.policy_guard_min_top1_delta),
+        ])
+        return True
+    except subprocess.CalledProcessError:
+        return False
 
 
 def build_counterfactual_teacher(
@@ -450,7 +483,28 @@ def main() -> None:
         counterfactual_teacher = build_counterfactual_teacher(counterfactual_discards, trajectories, iter_dir, args)
         value_checkpoint = train_value_head(base_checkpoint, trajectories, iter_dir, args)
         ranker_checkpoint = train_ranker(value_checkpoint, counterfactual_teacher, iter_dir, args)
+        if not policy_guard(
+            value_checkpoint,
+            ranker_checkpoint,
+            counterfactual_teacher,
+            iter_dir / "ranker_policy_guard.json",
+            args,
+        ):
+            print("Ranker policy guard rejected candidate; using value checkpoint for AWR")
+            ranker_checkpoint = value_checkpoint
         awr_checkpoint = run_awr(ranker_checkpoint, trajectories, iter_dir, args)
+        if not policy_guard(
+            ranker_checkpoint,
+            awr_checkpoint,
+            counterfactual_teacher,
+            iter_dir / "awr_policy_guard.json",
+            args,
+        ):
+            print("AWR policy guard rejected candidate; using pre-AWR checkpoint")
+            awr_checkpoint = ranker_checkpoint
+        if awr_checkpoint == value_checkpoint:
+            print("No policy-improving checkpoint survived offline guards; skipping arena selection")
+            continue
         candidate_onnx = iter_dir / "candidate.onnx"
         export_candidate(awr_checkpoint, candidate_onnx)
         summaries = matrix_eval(

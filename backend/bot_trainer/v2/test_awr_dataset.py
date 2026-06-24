@@ -29,6 +29,7 @@ from candidate_bank import CandidateRecord, CandidateBank, select_best_candidate
 from bucket_report import bucket_key, summarize_buckets
 from counterfactual_dataset import CounterfactualDiscardDataset
 from build_counterfactual_teacher import RolloutTeacherConfig, enhance_counterfactual_rows
+from policy_guard import PolicyGuardMetrics, evaluate_policy_guard
 from train_discard_ranker import compute_ranker_loss, ranker_metrics
 
 
@@ -951,3 +952,27 @@ class TestCounterfactualTeacher:
         )
 
         assert enhanced[0]["teacher_best_index"] == 1
+
+
+class TestPolicyGuard:
+    def test_rejects_candidate_with_lower_teacher_top1_than_baseline(self):
+        result = evaluate_policy_guard(
+            PolicyGuardMetrics(teacher_top1=0.96, kl_from_baseline=0.01),
+            baseline=PolicyGuardMetrics(teacher_top1=0.98, kl_from_baseline=0.0),
+            min_top1_delta=-0.002,
+            max_kl=0.05,
+        )
+
+        assert result["accepted"] is False
+        assert "teacher_top1_regression" in result["failures"]
+
+    def test_accepts_candidate_with_no_top1_regression_and_small_kl(self):
+        result = evaluate_policy_guard(
+            PolicyGuardMetrics(teacher_top1=0.981, kl_from_baseline=0.01),
+            baseline=PolicyGuardMetrics(teacher_top1=0.98, kl_from_baseline=0.0),
+            min_top1_delta=-0.002,
+            max_kl=0.05,
+        )
+
+        assert result["accepted"] is True
+        assert result["failures"] == []
