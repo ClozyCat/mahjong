@@ -10,6 +10,7 @@ node_modules/
 .pytest_cache/
 *.log
 backend/bot_trainer/datasets
+backend/bot_trainer/datasets2
 .venv/
 *.pyc
 Mahjong_Voices/
