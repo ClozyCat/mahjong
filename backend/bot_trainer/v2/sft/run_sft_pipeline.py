@@ -88,6 +88,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--onnx-output", default=DEFAULT_ONNX_OUTPUT)
     parser.add_argument("--progress-every", type=int, default=10000)
     parser.add_argument("--max-matches", type=int, default=0)
+    parser.add_argument("--export-workers", type=int, default=0)
     parser.add_argument("--epochs", type=int, default=20)
     parser.add_argument("--batch-size", type=int, default=1024)
     parser.add_argument("--num-workers", type=int, default=0)
@@ -167,6 +168,7 @@ def prompt_pipeline(args: argparse.Namespace, root: Path) -> None:
     args.device = choice_prompt("Device", ("auto", "cuda", "cpu", "dml"), args.device)
     args.epochs = int(value_prompt("Training epochs", str(args.epochs)))
     args.batch_size = int(value_prompt("Batch size", str(args.batch_size)))
+    args.export_workers = int(value_prompt("Dataset export workers", str(args.export_workers)))
     args.num_workers = int(value_prompt("Data loader workers", str(args.num_workers)))
 
     data_dir = (root / args.data_dir).resolve()
@@ -257,6 +259,8 @@ def run_export_command(
     ]
     if args.max_matches > 0:
         command.extend(["--max-matches", str(args.max_matches)])
+    if args.export_workers > 0:
+        command.extend(["--workers", str(args.export_workers)])
     run_command(command, root)
 
 

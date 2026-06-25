@@ -128,7 +128,9 @@ def test_sft_pipeline_supports_datasets2_export_source() -> None:
     assert 'parser.add_argument("--input-format", choices=("botzone", "datasets2", "both"), default="botzone")' in pipeline
     assert 'DEFAULT_DATASETS2_INPUT_PATH = "backend/bot_trainer/datasets2"' in pipeline
     assert 'parser.add_argument("--datasets2-input", default=DEFAULT_DATASETS2_INPUT_PATH)' in pipeline
+    assert 'parser.add_argument("--export-workers", type=int, default=0)' in pipeline
     assert '"export_bot_dataset_v2_datasets2"' in pipeline
+    assert '"--workers"' in pipeline
     assert 'if args.input_format == "datasets2" and args.input == DEFAULT_INPUT_PATH:' in pipeline
     assert 'if args.input_format == "both":' in pipeline
     assert "merge_exported_datasets" in pipeline

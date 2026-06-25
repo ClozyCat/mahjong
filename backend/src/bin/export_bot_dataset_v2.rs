@@ -8,6 +8,7 @@ struct ExportArgs {
     output_dir: PathBuf,
     max_matches: Option<usize>,
     progress_every: Option<usize>,
+    worker_count: usize,
 }
 
 fn main() -> Result<()> {
@@ -18,6 +19,7 @@ fn main() -> Result<()> {
         ExportOptions {
             max_matches: args.max_matches,
             progress_every: args.progress_every,
+            worker_count: args.worker_count,
         },
     )
     .map_err(|error| anyhow::anyhow!(error.to_string()))?;
@@ -36,6 +38,7 @@ fn parse_args() -> Result<ExportArgs> {
     let mut output_dir = PathBuf::from("backend/bot_trainer/v2/sft/out");
     let mut max_matches = None;
     let mut progress_every = Some(100_usize);
+    let mut worker_count = 0_usize;
 
     let mut args = std::env::args().skip(1);
     while let Some(arg) = args.next() {
@@ -57,6 +60,10 @@ fn parse_args() -> Result<ExportArgs> {
             "--no-progress" => {
                 progress_every = None;
             }
+            "--workers" => {
+                let value = args.next().context("--workers requires a number")?;
+                worker_count = value.parse::<usize>()?;
+            }
             _ => anyhow::bail!("unknown argument: {arg}"),
         }
     }
@@ -66,5 +73,6 @@ fn parse_args() -> Result<ExportArgs> {
         output_dir,
         max_matches,
         progress_every,
+        worker_count,
     })
 }

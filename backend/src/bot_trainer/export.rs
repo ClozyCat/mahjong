@@ -2,10 +2,13 @@ use std::collections::BTreeMap;
 use std::fs::{self, File};
 use std::io::{BufWriter, Write};
 use std::path::{Path, PathBuf};
+use std::sync::{Arc, mpsc};
+use std::thread;
 use std::time::Instant;
 
 use serde::{Deserialize, Serialize};
 
+use super::botzone::BotZoneMatch;
 use super::botzone::parse_matches;
 use super::replay::{
     DecisionKind, TrainingDecisionSampleV2, TrainingLabel, replay_match_to_samples,
@@ -47,6 +50,7 @@ pub struct ExportReport {
 pub struct ExportOptions {
     pub max_matches: Option<usize>,
     pub progress_every: Option<usize>,
+    pub worker_count: usize,
 }
 
 #[derive(Debug)]
@@ -108,6 +112,7 @@ pub fn run_export(
         ExportOptions {
             max_matches,
             progress_every: None,
+            worker_count: 0,
         },
     )
 }
@@ -140,30 +145,11 @@ pub fn run_export_with_options(
     };
     let total_matches = matches.len();
 
-    for (match_offset, record) in matches.into_iter().enumerate() {
-        let split = split_for_match_id(&record.match_id);
-        let samples = match replay_match_to_samples(&record) {
-            Ok(samples) => samples,
-            Err(error) => {
-                report.parse_error_count += 1;
-                report.skipped_match_ids.push(record.match_id);
-                eprintln!("skip match after replay error: {error}");
-                continue;
-            }
-        };
-        for sample in samples {
-            if validate_sample(&sample).is_err() {
-                report.runtime_illegal_label_count += 1;
-                continue;
-            }
-            *report.samples_by_split.entry(split).or_default() += 1;
-            *report
-                .samples_by_decision_kind
-                .entry(decision_kind_name(&sample.decision_kind).to_string())
-                .or_default() += 1;
-            writers.write(split, &sample)?;
-            report.sample_count += 1;
-        }
+    for (match_offset, result) in process_matches(matches, options.worker_count)?
+        .into_iter()
+        .enumerate()
+    {
+        write_processed_match(result, &mut writers, &mut report)?;
         maybe_report_progress(
             options.progress_every,
             match_offset + 1,
@@ -185,6 +171,99 @@ pub fn run_export_with_options(
         started.elapsed().as_secs_f64()
     );
     Ok(report)
+}
+
+struct ProcessedMatch {
+    match_id: String,
+    split: DatasetSplit,
+    samples: Result<Vec<TrainingDecisionSampleV2>, String>,
+}
+
+fn process_matches(
+    matches: Vec<BotZoneMatch>,
+    worker_count: usize,
+) -> Result<Vec<ProcessedMatch>, ExportError> {
+    if worker_count <= 1 || matches.len() <= 1 {
+        return Ok(matches.into_iter().map(process_one_match).collect());
+    }
+
+    let total = matches.len();
+    let records = Arc::new(matches);
+    let (sender, receiver) = mpsc::channel::<(usize, ProcessedMatch)>();
+    let workers = worker_count.min(total);
+    let mut handles = Vec::with_capacity(workers);
+    for worker_index in 0..workers {
+        let records = Arc::clone(&records);
+        let sender = sender.clone();
+        handles.push(thread::spawn(move || {
+            let mut index = worker_index;
+            while index < records.len() {
+                let processed = process_one_match(records[index].clone());
+                if sender.send((index, processed)).is_err() {
+                    return;
+                }
+                index += workers;
+            }
+        }));
+    }
+    drop(sender);
+
+    let mut ordered = std::iter::repeat_with(|| None)
+        .take(total)
+        .collect::<Vec<Option<ProcessedMatch>>>();
+    for (index, processed) in receiver {
+        ordered[index] = Some(processed);
+    }
+    for handle in handles {
+        if handle.join().is_err() {
+            return Err(ExportError::Replay("export worker panicked".to_string()));
+        }
+    }
+    ordered
+        .into_iter()
+        .map(|value| value.ok_or_else(|| ExportError::Replay("missing worker result".to_string())))
+        .collect()
+}
+
+fn process_one_match(record: BotZoneMatch) -> ProcessedMatch {
+    let split = split_for_match_id(&record.match_id);
+    let match_id = record.match_id.clone();
+    let samples = replay_match_to_samples(&record).map_err(|error| error.to_string());
+    ProcessedMatch {
+        match_id,
+        split,
+        samples,
+    }
+}
+
+fn write_processed_match(
+    result: ProcessedMatch,
+    writers: &mut ShardWriters,
+    report: &mut ExportReport,
+) -> Result<(), ExportError> {
+    let samples = match result.samples {
+        Ok(samples) => samples,
+        Err(error) => {
+            report.parse_error_count += 1;
+            report.skipped_match_ids.push(result.match_id);
+            eprintln!("skip match after replay error: {error}");
+            return Ok(());
+        }
+    };
+    for sample in samples {
+        if validate_sample(&sample).is_err() {
+            report.runtime_illegal_label_count += 1;
+            continue;
+        }
+        *report.samples_by_split.entry(result.split).or_default() += 1;
+        *report
+            .samples_by_decision_kind
+            .entry(decision_kind_name(&sample.decision_kind).to_string())
+            .or_default() += 1;
+        writers.write(result.split, &sample)?;
+        report.sample_count += 1;
+    }
+    Ok(())
 }
 
 pub fn split_for_match_id(match_id: &str) -> DatasetSplit {
@@ -462,5 +541,69 @@ mod tests {
             tile_key: "w2".to_string(),
         };
         assert!(validate_sample(&sample).is_ok());
+    }
+
+    #[test]
+    fn parallel_export_matches_single_worker_output() {
+        let temp_root = std::env::temp_dir().join(format!(
+            "mahjong-export-workers-test-{}",
+            std::process::id()
+        ));
+        let input_path = temp_root.join("input.txt");
+        let single_dir = temp_root.join("single");
+        let parallel_dir = temp_root.join("parallel");
+        std::fs::create_dir_all(&temp_root).expect("create temp");
+        std::fs::write(
+            &input_path,
+            r#"
+Match first
+Player 0 Deal W1 W2 W3
+Player 1 Deal B1 B2 B3
+Player 2 Deal T1 T2 T3
+Player 3 Deal J1 J2 J3
+Player 0 Draw B1
+Player 0 Play W1
+Score 0 0 0 0
+Match second
+Player 0 Deal W1 W2 W3
+Player 1 Deal B1 B2 B3
+Player 2 Deal T1 T2 T3
+Player 3 Deal J1 J2 J3
+Player 1 Draw B1
+Player 1 Play B1
+Score 0 0 0 0
+"#,
+        )
+        .expect("write input");
+
+        run_export_with_options(
+            &input_path,
+            &single_dir,
+            ExportOptions {
+                max_matches: None,
+                progress_every: None,
+                worker_count: 0,
+            },
+        )
+        .expect("single export");
+        run_export_with_options(
+            &input_path,
+            &parallel_dir,
+            ExportOptions {
+                max_matches: None,
+                progress_every: None,
+                worker_count: 2,
+            },
+        )
+        .expect("parallel export");
+
+        for name in ["train.jsonl", "val.jsonl", "test.jsonl"] {
+            assert_eq!(
+                std::fs::read_to_string(single_dir.join(name)).expect("single split"),
+                std::fs::read_to_string(parallel_dir.join(name)).expect("parallel split"),
+            );
+        }
+
+        let _ = std::fs::remove_dir_all(temp_root);
     }
 }
