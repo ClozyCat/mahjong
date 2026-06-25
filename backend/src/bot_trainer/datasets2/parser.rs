@@ -72,7 +72,7 @@ fn parse_event(line: &str) -> Result<Option<BotZoneEvent>, String> {
             };
             BotZoneAction::Draw { tile_key }
         }
-        "补花后摸牌" => BotZoneAction::Draw {
+        "补花后摸牌" | "杠后摸牌" => BotZoneAction::Draw {
             tile_key: tile.ok_or_else(|| format!("missing draw tile: {line}"))?,
         },
         "打牌" => BotZoneAction::Play {
@@ -102,7 +102,7 @@ fn parse_event(line: &str) -> Result<Option<BotZoneEvent>, String> {
                 .or(tile)
                 .ok_or_else(|| format!("missing add kong tile: {line}"))?,
         },
-        "胡" | "和" | "自摸" => BotZoneAction::Hu {
+        "胡" | "和" | "自摸" | "和牌" | "胡牌" => BotZoneAction::Hu {
             tile_key: tile.unwrap_or_default(),
         },
         "补花" => return Ok(None),
