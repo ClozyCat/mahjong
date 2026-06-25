@@ -30,9 +30,22 @@ def test_encode_row_without_torch_dependency(tmp_path: Path) -> None:
     )
     assert encoded["discard_mask"].shape == (34,)
     assert encoded["discard_target"].item() == 0
+    assert encoded["sample_weight"].shape == (1,)
+    assert encoded["sample_weight"][0].item() == 1.0
 
 
-def test_schema_v6_encodes_opponent_targets_and_fan_targets(tmp_path: Path) -> None:
+def test_encode_row_reads_sample_weight(tmp_path: Path) -> None:
+    metadata_path, train_path = write_fixture(tmp_path)
+    metadata = json.loads(metadata_path.read_text(encoding="utf-8"))
+    row = json.loads(train_path.read_text(encoding="utf-8").splitlines()[0])
+    row["sample_weight"] = 0.35
+
+    encoded = encode_row(row, metadata)
+
+    assert encoded["sample_weight"][0].item() == pytest.approx(0.35)
+
+
+def test_schema_v7_encodes_opponent_targets_fan_targets_and_sample_weight(tmp_path: Path) -> None:
     metadata_path, train_path = write_fixture(tmp_path)
     metadata = json.loads(metadata_path.read_text(encoding="utf-8"))
     row = json.loads(train_path.read_text(encoding="utf-8").splitlines()[0])
@@ -60,6 +73,7 @@ def test_schema_v6_encodes_opponent_targets_and_fan_targets(tmp_path: Path) -> N
     assert encoded["fan_target"][0].item() == 0.5
     assert encoded["qualifying_fan_target"].shape == (1,)
     assert encoded["qualifying_fan_target"][0].item() == 1.0
+    assert encoded["sample_weight"][0].item() == 1.0
 
 
 def test_qualifying_fan_target_preserves_sub_eight_fan_gradient(tmp_path: Path) -> None:
@@ -328,6 +342,7 @@ def test_auxiliary_loss_weights_can_disable_value_and_risk() -> None:
         "opponent_tenpai_target": torch.zeros((1, 3)),
         "opponent_risk_target": torch.zeros((1, 3, 34)),
         "opponent_risk_mask": torch.zeros((1, 3, 34), dtype=torch.bool),
+        "sample_weight": torch.ones((1, 1)),
     }
 
     losses = compute_losses(
@@ -346,6 +361,51 @@ def test_auxiliary_loss_weights_can_disable_value_and_risk() -> None:
     # risk_loss现在是opponent modeling loss，可能为0（无opponent targets）
     assert losses["risk_loss"].item() >= 0.0
     assert losses["loss"].item() < 0.1
+
+
+def test_sample_weight_scales_selection_loss() -> None:
+    import torch
+    from train import compute_losses
+
+    outputs = {
+        "discard_logits": torch.tensor([[0.0, 0.0] + [-100.0] * 32]),
+        "claim_logits": torch.zeros((1, 7)),
+        "self_kong_logits": torch.zeros((1, 3)),
+        "hu_logits": torch.zeros((1, 2)),
+        "value": torch.zeros((1, 1)),
+        "fan_value": torch.zeros((1, 1)),
+        "qualifying_fan_value": torch.zeros((1, 1)),
+        "opponent_tenpai_logits": torch.zeros((1, 3)),
+        "opponent_risk_logits": torch.zeros((1, 3, 34)),
+    }
+    batch = {
+        "discard_mask": torch.tensor([[True, True] + [False] * 32]),
+        "discard_target": torch.tensor([0]),
+        "claim_mask": torch.zeros((1, 7), dtype=torch.bool),
+        "claim_target": torch.tensor([-100]),
+        "self_kong_mask": torch.zeros((1, 3), dtype=torch.bool),
+        "self_kong_target": torch.tensor([-100]),
+        "hu_mask": torch.zeros((1, 2), dtype=torch.bool),
+        "hu_target": torch.tensor([-100]),
+        "value_target": torch.zeros((1, 1)),
+        "fan_target": torch.zeros((1, 1)),
+        "qualifying_fan_target": torch.zeros((1, 1)),
+        "opponent_tenpai_target": torch.zeros((1, 3)),
+        "opponent_risk_target": torch.zeros((1, 3, 34)),
+        "opponent_risk_mask": torch.zeros((1, 3, 34), dtype=torch.bool),
+        "sample_weight": torch.tensor([[0.25]]),
+    }
+
+    losses = compute_losses(
+        outputs,
+        batch,
+        value_weight=0.0,
+        fan_weight=0.0,
+        qualifying_fan_weight=0.0,
+        risk_weight=0.0,
+    )
+
+    assert losses["discard_loss"].item() == pytest.approx(0.25 * 0.693147, rel=1e-5)
 
 
 def test_gradients_are_finite_rejects_nan_and_inf() -> None:
@@ -782,7 +842,7 @@ def claim_row(base_row: dict, last_discard: str, middle_tile_key: str) -> dict:
 
 def write_fixture(tmp_path: Path) -> tuple[Path, Path]:
     metadata = {
-        "schema_version": 6,
+        "schema_version": 7,
         "tile_keys": [
             "w1", "w2", "w3", "w4", "w5", "w6", "w7", "w8", "w9",
             "t1", "t2", "t3", "t4", "t5", "t6", "t7", "t8", "t9",
@@ -793,7 +853,8 @@ def write_fixture(tmp_path: Path) -> tuple[Path, Path]:
         "self_kong_actions": ["pass", "concealed_kong", "add_kong"],
     }
     row = {
-        "schema_version": 6,
+        "schema_version": 7,
+        "sample_weight": 1.0,
         "match_id": "fixture",
         "decision_index": 0,
         "seat_index": 0,

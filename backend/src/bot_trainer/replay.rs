@@ -4,11 +4,11 @@ use serde::{Deserialize, Serialize};
 
 use super::botzone::{BotZoneAction, BotZoneMatch, BotZoneResult};
 use crate::bot::action_space::{TILE_KEYS, TILE_KIND_COUNT, tile_index};
-use crate::rules::standard::ready_hand::is_tenpai_hand_with_melds;
 use crate::rules::scoring::{
     EvaluationInput, TimingFeatures, decompose_winning_hand_with_melds, evaluate_fans,
     extract_hand_features,
 };
+use crate::rules::standard::ready_hand::is_tenpai_hand_with_melds;
 
 const TOTAL_TILE_COUNT: i64 = 136;
 
@@ -39,6 +39,7 @@ pub(crate) struct TrainingDecisionSampleV2 {
     pub(crate) decision_index: u64,
     pub(crate) seat_index: usize,
     pub(crate) decision_kind: DecisionKind,
+    pub(crate) sample_weight: f32,
     pub(crate) context: SerializableBotContext,
     pub(crate) legal_actions: Vec<String>,
     pub(crate) label: TrainingLabel,
@@ -332,6 +333,7 @@ impl ReplayState {
             decision_index: *decision_index,
             seat_index: botzone_seat_to_standard(seat_index),
             decision_kind: DecisionKind::ActiveTurn,
+            sample_weight: 1.0,
             context,
             legal_actions,
             label,
@@ -374,6 +376,7 @@ impl ReplayState {
             decision_index: *decision_index,
             seat_index: botzone_seat_to_standard(seat_index),
             decision_kind: DecisionKind::ActiveTurn,
+            sample_weight: 1.0,
             context,
             legal_actions,
             label,
@@ -429,6 +432,7 @@ impl ReplayState {
                 decision_index: *decision_index,
                 seat_index: botzone_seat_to_standard(seat_index),
                 decision_kind: DecisionKind::ClaimWindow,
+                sample_weight: 1.0,
                 context,
                 legal_actions,
                 label,
@@ -471,6 +475,7 @@ impl ReplayState {
                 decision_index: *decision_index,
                 seat_index: botzone_seat_to_standard(seat_index),
                 decision_kind: DecisionKind::RobKong,
+                sample_weight: 1.0,
                 context,
                 legal_actions: vec!["claim:hu".to_string(), "pass".to_string()],
                 label,
@@ -1348,14 +1353,22 @@ Score 0 0 0 0
         let samples = replay_match_to_samples(&record).expect("samples");
         let first_discard = samples
             .iter()
-            .find(|sample| sample.seat_index == 0 && sample.decision_kind == DecisionKind::ActiveTurn)
+            .find(|sample| {
+                sample.seat_index == 0 && sample.decision_kind == DecisionKind::ActiveTurn
+            })
             .expect("active turn sample");
 
         assert_eq!(first_discard.opponent_tenpai_target, vec![1.0, 0.0, 1.0]);
         assert_eq!(first_discard.opponent_risk_target.len(), 3);
         assert_eq!(first_discard.opponent_risk_target[0].len(), TILE_KIND_COUNT);
-        assert_eq!(first_discard.opponent_risk_mask[0], vec![1.0; TILE_KIND_COUNT]);
-        assert_eq!(first_discard.opponent_risk_mask[1], vec![0.0; TILE_KIND_COUNT]);
+        assert_eq!(
+            first_discard.opponent_risk_mask[0],
+            vec![1.0; TILE_KIND_COUNT]
+        );
+        assert_eq!(
+            first_discard.opponent_risk_mask[1],
+            vec![0.0; TILE_KIND_COUNT]
+        );
     }
 
     #[test]

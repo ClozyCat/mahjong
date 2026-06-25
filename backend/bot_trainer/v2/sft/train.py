@@ -439,34 +439,53 @@ def compute_losses(
     hu_positive_weight: float = DEFAULT_HU_POSITIVE_WEIGHT,
 ) -> dict[str, torch.Tensor]:
     outputs = sanitize_outputs(outputs)
-    discard_loss = masked_cross_entropy(outputs["discard_logits"], batch["discard_mask"], batch["discard_target"])
+    sample_weights = sample_weights_for_batch(batch, outputs["discard_logits"].device)
+    discard_loss = masked_cross_entropy(
+        outputs["discard_logits"],
+        batch["discard_mask"],
+        batch["discard_target"],
+        sample_weights=sample_weights,
+    )
     claim_loss = masked_cross_entropy(
         outputs["claim_logits"],
         batch["claim_mask"],
         batch["claim_target"],
         non_pass_class_weights(outputs["claim_logits"], claim_rare_action_weight),
+        sample_weights=sample_weights,
     )
     self_kong_loss = masked_cross_entropy(
         outputs["self_kong_logits"],
         batch["self_kong_mask"],
         batch["self_kong_target"],
         non_pass_class_weights(outputs["self_kong_logits"], self_kong_rare_action_weight),
+        sample_weights=sample_weights,
     )
     hu_loss = masked_cross_entropy(
         outputs["hu_logits"],
         batch["hu_mask"],
         batch["hu_target"],
         hu_class_weights(outputs["hu_logits"], hu_positive_weight),
+        sample_weights=sample_weights,
     )
 
     # 添加数值稳定性保护
-    value_loss = F.mse_loss(outputs["value"], batch["value_target"].float())
+    value_loss = weighted_mean(
+        F.mse_loss(outputs["value"], batch["value_target"].float(), reduction="none"),
+        sample_weights,
+    )
     value_loss = torch.clamp(value_loss, max=100.0)  # 防止MSE爆炸
-    fan_loss = F.mse_loss(outputs["fan_value"], batch["fan_target"].float())
+    fan_loss = weighted_mean(
+        F.mse_loss(outputs["fan_value"], batch["fan_target"].float(), reduction="none"),
+        sample_weights,
+    )
     fan_loss = torch.clamp(fan_loss, max=100.0)
-    qualifying_fan_loss = F.mse_loss(
-        outputs["qualifying_fan_value"],
-        batch["qualifying_fan_target"].float(),
+    qualifying_fan_loss = weighted_mean(
+        F.mse_loss(
+            outputs["qualifying_fan_value"],
+            batch["qualifying_fan_target"].float(),
+            reduction="none",
+        ),
+        sample_weights,
     )
     qualifying_fan_loss = torch.clamp(qualifying_fan_loss, max=100.0)
 
@@ -474,10 +493,13 @@ def compute_losses(
     opponent_risk_loss = torch.tensor(0.0, device=value_loss.device)
     if "opponent_tenpai_logits" in outputs and "opponent_risk_logits" in outputs:
         if "opponent_tenpai_target" in batch:
-            opponent_tenpai_loss = F.binary_cross_entropy_with_logits(
-                outputs["opponent_tenpai_logits"],
-                batch["opponent_tenpai_target"].float(),
-                reduction="mean",
+            opponent_tenpai_loss = weighted_mean(
+                F.binary_cross_entropy_with_logits(
+                    outputs["opponent_tenpai_logits"],
+                    batch["opponent_tenpai_target"].float(),
+                    reduction="none",
+                ),
+                sample_weights,
             )
         if "opponent_risk_target" in batch and "opponent_risk_mask" in batch:
             risk_targets = batch["opponent_risk_target"].float()
@@ -493,7 +515,7 @@ def compute_losses(
             pt = torch.where(risk_targets == 1, probs, 1 - probs)
             focal_weight = (1 - pt) ** gamma
             focal_loss = alpha * focal_weight * bce
-            opponent_risk_loss = focal_loss[risk_masks].mean() if risk_masks.any() else torch.tensor(0.0, device=value_loss.device)
+            opponent_risk_loss = masked_weighted_mean(focal_loss, risk_masks, sample_weights)
 
     loss = (
         discard_loss
@@ -589,6 +611,7 @@ def masked_cross_entropy(
     mask: torch.Tensor,
     target: torch.Tensor,
     class_weights: torch.Tensor | None = None,
+    sample_weights: torch.Tensor | None = None,
 ) -> torch.Tensor:
     logits = sanitize_tensor(logits).float()
     active = target != IGNORE_INDEX
@@ -603,7 +626,41 @@ def masked_cross_entropy(
     losses = F.cross_entropy(masked_logits[active], active_targets, reduction="none")
     if class_weights is not None:
         losses = losses * class_weights[active_targets]
+    if sample_weights is not None:
+        losses = losses * sample_weights[active]
     return losses.mean()
+
+
+def sample_weights_for_batch(batch: dict[str, torch.Tensor], device: torch.device) -> torch.Tensor:
+    raw = batch.get("sample_weight")
+    if raw is None:
+        size = next(iter(batch.values())).shape[0]
+        return torch.ones((size,), device=device, dtype=torch.float32)
+    return raw.to(device=device, dtype=torch.float32).view(-1).clamp_min(0.0)
+
+
+def weighted_mean(losses: torch.Tensor, sample_weights: torch.Tensor) -> torch.Tensor:
+    weights = expand_sample_weights(sample_weights, losses)
+    return (losses.float() * weights).mean()
+
+
+def masked_weighted_mean(
+    losses: torch.Tensor,
+    mask: torch.Tensor,
+    sample_weights: torch.Tensor,
+) -> torch.Tensor:
+    active = mask.bool()
+    if not torch.any(active):
+        return losses.float().sum() * 0.0
+    weights = expand_sample_weights(sample_weights, losses)
+    return (losses.float() * weights)[active].mean()
+
+
+def expand_sample_weights(sample_weights: torch.Tensor, losses: torch.Tensor) -> torch.Tensor:
+    weights = sample_weights
+    while weights.ndim < losses.ndim:
+        weights = weights.unsqueeze(-1)
+    return weights
 
 
 def non_pass_class_weights(logits: torch.Tensor, rare_action_weight: float) -> torch.Tensor:

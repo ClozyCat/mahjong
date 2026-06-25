@@ -11,7 +11,7 @@ use serde::{Deserialize, Serialize};
 use super::botzone::BotZoneMatch;
 use super::botzone::parse_matches;
 use super::replay::{
-    DecisionKind, TrainingDecisionSampleV2, TrainingLabel, replay_match_to_samples,
+    DecisionKind, SampleOutcome, TrainingDecisionSampleV2, TrainingLabel, replay_match_to_samples,
 };
 use crate::bot::action_space::{CLAIM_ACTIONS, SELF_KONG_ACTIONS, TILE_KEYS};
 
@@ -46,6 +46,12 @@ pub struct ExportReport {
     pub samples_by_split: BTreeMap<DatasetSplit, usize>,
     pub samples_by_decision_kind: BTreeMap<String, usize>,
 }
+
+const QUALIFYING_WIN_SAMPLE_WEIGHT: f32 = 1.0;
+const LOW_FAN_WIN_SAMPLE_WEIGHT: f32 = 0.75;
+const NON_WINNER_SAMPLE_WEIGHT: f32 = 0.35;
+const DRAWN_SAMPLE_WEIGHT: f32 = 0.5;
+const DEALT_IN_SAMPLE_WEIGHT: f32 = 0.2;
 
 #[derive(Debug, Clone, Copy, Default)]
 pub struct ExportOptions {
@@ -163,7 +169,7 @@ pub fn run_export_with_options(
     writers.flush()?;
     write_json(output_dir.join("export_report.json"), &report)?;
     eprintln!(
-        "finished export: matches={} samples={} non_winner_skipped={} skipped={} illegal_labels={} runtime_illegal_labels={} elapsed_s={:.1}",
+        "finished export: matches={} samples={} non_winner_weighted={} skipped={} illegal_labels={} runtime_illegal_labels={} elapsed_s={:.1}",
         report.match_count,
         report.sample_count,
         report.non_winner_sample_count,
@@ -237,11 +243,7 @@ fn process_matches(
 fn process_one_match(record: BotZoneMatch) -> ProcessedMatch {
     let split = split_for_match_id(&record.match_id);
     let match_id = record.match_id.clone();
-    let samples = if matches!(record.result, super::botzone::BotZoneResult::Huang { .. }) {
-        Ok(Vec::new())
-    } else {
-        replay_match_to_samples(&record).map_err(|error| error.to_string())
-    };
+    let samples = replay_match_to_samples(&record).map_err(|error| error.to_string());
     ProcessedMatch {
         match_id,
         split,
@@ -263,14 +265,15 @@ fn write_processed_match(
             return Ok(());
         }
     };
-    for sample in samples {
-        if !sample.outcome.won || sample.outcome.fan_count < 8 {
-            report.non_winner_sample_count += 1;
-            continue;
-        }
+    for mut sample in samples {
+        let is_downweighted = is_downweighted_sample(&sample);
+        sample.sample_weight = sample_weight_for_outcome(&sample.outcome);
         if validate_sample(&sample).is_err() {
             report.runtime_illegal_label_count += 1;
             continue;
+        }
+        if is_downweighted {
+            report.non_winner_sample_count += 1;
         }
         *report.samples_by_split.entry(result.split).or_default() += 1;
         *report
@@ -294,7 +297,7 @@ pub fn split_for_match_id(match_id: &str) -> DatasetSplit {
 
 pub fn export_metadata() -> BotDatasetMetadata {
     BotDatasetMetadata {
-        schema_version: 6,
+        schema_version: 7,
         tile_keys: TILE_KEYS.iter().map(|value| (*value).to_string()).collect(),
         decision_kinds: ["active_turn", "claim_window", "rob_kong"]
             .into_iter()
@@ -325,6 +328,26 @@ pub fn export_metadata() -> BotDatasetMetadata {
         .collect(),
         split_strategy: "match_id_hash".to_string(),
     }
+}
+
+pub(crate) fn sample_weight_for_outcome(outcome: &SampleOutcome) -> f32 {
+    if outcome.won && outcome.fan_count >= 8 {
+        QUALIFYING_WIN_SAMPLE_WEIGHT
+    } else if outcome.won {
+        LOW_FAN_WIN_SAMPLE_WEIGHT
+    } else if outcome.dealt_in {
+        DEALT_IN_SAMPLE_WEIGHT
+    } else if outcome.round_drawn {
+        DRAWN_SAMPLE_WEIGHT
+    } else {
+        NON_WINNER_SAMPLE_WEIGHT
+    }
+}
+
+pub(crate) fn is_downweighted_sample(sample: &TrainingDecisionSampleV2) -> bool {
+    sample.sample_weight < QUALIFYING_WIN_SAMPLE_WEIGHT
+        || !sample.outcome.won
+        || sample.outcome.fan_count < 8
 }
 
 pub(crate) fn validate_sample(sample: &TrainingDecisionSampleV2) -> Result<(), ExportError> {
@@ -454,9 +477,9 @@ mod tests {
     }
 
     #[test]
-    fn metadata_contains_v6_model_outputs() {
+    fn metadata_contains_v7_model_outputs() {
         let metadata = export_metadata();
-        assert_eq!(metadata.schema_version, 6);
+        assert_eq!(metadata.schema_version, 7);
         assert!(
             metadata
                 .model_outputs
@@ -505,6 +528,38 @@ mod tests {
     }
 
     #[test]
+    fn sample_weight_keeps_non_winner_decisions_with_lower_weight() {
+        let winner = crate::bot_trainer::replay::SampleOutcome {
+            score_delta: 24,
+            fan_count: 8,
+            won: true,
+            dealt_in: false,
+            round_drawn: false,
+        };
+        let non_winner = crate::bot_trainer::replay::SampleOutcome {
+            score_delta: -8,
+            fan_count: 0,
+            won: false,
+            dealt_in: false,
+            round_drawn: false,
+        };
+        let dealt_in = crate::bot_trainer::replay::SampleOutcome {
+            dealt_in: true,
+            ..non_winner.clone()
+        };
+        let drawn = crate::bot_trainer::replay::SampleOutcome {
+            score_delta: 0,
+            round_drawn: true,
+            ..non_winner.clone()
+        };
+
+        assert_eq!(sample_weight_for_outcome(&winner), 1.0);
+        assert!(sample_weight_for_outcome(&non_winner) > sample_weight_for_outcome(&dealt_in));
+        assert!(sample_weight_for_outcome(&drawn) > sample_weight_for_outcome(&dealt_in));
+        assert!(sample_weight_for_outcome(&non_winner) < 1.0);
+    }
+
+    #[test]
     fn validate_sample_rejects_restricted_discard_label() {
         let mut sample = TrainingDecisionSampleV2 {
             schema_version: 2,
@@ -512,6 +567,7 @@ mod tests {
             decision_index: 0,
             seat_index: 0,
             decision_kind: DecisionKind::ActiveTurn,
+            sample_weight: 1.0,
             context: crate::bot_trainer::replay::SerializableBotContext {
                 seat_index: 0,
                 seat_count: 4,
@@ -558,6 +614,63 @@ mod tests {
             tile_key: "w2".to_string(),
         };
         assert!(validate_sample(&sample).is_ok());
+    }
+
+    #[test]
+    fn export_keeps_drawn_round_samples_with_lower_weight() {
+        let temp_root =
+            std::env::temp_dir().join(format!("mahjong-export-drawn-test-{}", std::process::id()));
+        let input_path = temp_root.join("input.txt");
+        let output_dir = temp_root.join("out");
+        std::fs::create_dir_all(&temp_root).expect("create temp");
+        std::fs::write(
+            &input_path,
+            r#"
+Match drawn
+Player 0 Deal W1 W2 W3
+Player 1 Deal B1 B2 B3
+Player 2 Deal T1 T2 T3
+Player 3 Deal J1 J2 J3
+Player 0 Draw B1
+Player 0 Play W1
+Huang
+Score 0 0 0 0
+"#,
+        )
+        .expect("write input");
+
+        let report = run_export_with_options(
+            &input_path,
+            &output_dir,
+            ExportOptions {
+                max_matches: None,
+                progress_every: None,
+                worker_count: 0,
+            },
+        )
+        .expect("export");
+
+        assert!(report.sample_count > 0);
+        assert_eq!(report.non_winner_sample_count, report.sample_count);
+        let exported = ["train.jsonl", "val.jsonl", "test.jsonl"]
+            .into_iter()
+            .find_map(|name| {
+                std::fs::read_to_string(output_dir.join(name))
+                    .expect("read split")
+                    .lines()
+                    .find(|line| !line.trim().is_empty())
+                    .map(str::to_string)
+            })
+            .expect("exported drawn sample");
+        let row: serde_json::Value = serde_json::from_str(&exported).expect("sample json");
+        assert!(
+            row["outcome"]["round_drawn"]
+                .as_bool()
+                .expect("round drawn")
+        );
+        assert!(row["sample_weight"].as_f64().expect("sample weight") < 1.0);
+
+        let _ = std::fs::remove_dir_all(temp_root);
     }
 
     #[test]

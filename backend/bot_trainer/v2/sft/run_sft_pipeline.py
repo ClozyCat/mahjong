@@ -10,7 +10,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 
-EXPECTED_METADATA_SCHEMA_VERSION = 6
+EXPECTED_METADATA_SCHEMA_VERSION = 7
 DEFAULT_INPUT_PATH = "backend/bot_trainer/datasets/data.txt"
 DEFAULT_DATASETS2_INPUT_PATH = "backend/bot_trainer/datasets2"
 DEFAULT_DATA_DIR = "backend/bot_trainer/v2/sft/out"

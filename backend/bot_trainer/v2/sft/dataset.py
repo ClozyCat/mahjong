@@ -19,10 +19,10 @@ SCALAR_FEATURE_COUNT = 13
 DISCARD_SEQUENCE_LENGTH = 32
 DISCARD_EVENT_FEATURE_COUNT = 40
 IGNORE_INDEX = -100
-DISK_CACHE_VERSION = 10
+DISK_CACHE_VERSION = 11
 FAN_TARGET_SCALE = 16.0
 QUALIFYING_FAN_TARGET = 8.0
-EXPECTED_METADATA_SCHEMA_VERSION = 6
+EXPECTED_METADATA_SCHEMA_VERSION = 7
 STANDARD_WIND_ORDER = ("east", "south", "west", "north")
 ROUND_WIND_TO_INDEX = {"east": 0.0, "south": 1.0, "west": 2.0, "north": 3.0}
 
@@ -187,6 +187,7 @@ def tensor_array_specs(metadata: dict[str, Any]) -> dict[str, tuple[tuple[int, .
         "opponent_risk_mask": ((3, TILE_KIND_COUNT), np.dtype(np.bool_)),
         "fan_target": ((1,), np.dtype(np.float32)),
         "qualifying_fan_target": ((1,), np.dtype(np.float32)),
+        "sample_weight": ((1,), np.dtype(np.float32)),
         "decision_kind": ((), np.dtype(np.int64)),
     }
 
@@ -334,6 +335,7 @@ def encode_row(
         "opponent_risk_mask": np.asarray(row["opponent_risk_mask"], dtype=np.bool_),
         "fan_target": fan_target(row),
         "qualifying_fan_target": qualifying_fan_target(row),
+        "sample_weight": sample_weight(row),
         "decision_kind": np.asarray(decision_kind_index(row["decision_kind"]), dtype=np.int64),
     }
 
@@ -532,6 +534,11 @@ def fan_target(row: dict[str, Any]) -> np.ndarray:
 def qualifying_fan_target(row: dict[str, Any]) -> np.ndarray:
     fan_count = max(0.0, float(row.get("outcome", {}).get("fan_count", 0.0)))
     return np.asarray([min(fan_count, QUALIFYING_FAN_TARGET) / QUALIFYING_FAN_TARGET], dtype=np.float32)
+
+
+def sample_weight(row: dict[str, Any]) -> np.ndarray:
+    weight = float(row.get("sample_weight", 1.0))
+    return np.asarray([max(0.0, weight)], dtype=np.float32)
 
 
 def decision_kind_index(decision_kind: str) -> int:

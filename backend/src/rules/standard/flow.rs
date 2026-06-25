@@ -533,9 +533,7 @@ fn reconcile_continue_action_in_room_state(room: &mut RoomState) -> Result<(), S
         let bot_takeover_unconfirmed: Vec<usize> = room
             .seats
             .iter()
-            .filter(|s| {
-                s.is_bot && s.seat_type == "human" && required.contains(&s.seat_index)
-            })
+            .filter(|s| s.is_bot && s.seat_type == "human" && required.contains(&s.seat_index))
             .map(|s| s.seat_index)
             .filter(|idx| !confirmed.contains(idx))
             .collect();
@@ -547,9 +545,8 @@ fn reconcile_continue_action_in_room_state(room: &mut RoomState) -> Result<(), S
         if !bot_takeover_unconfirmed.is_empty()
             && required.iter().all(|seat| confirmed.contains(seat))
         {
-            let deadline = (Utc::now()
-                + TimeDelta::seconds(BOT_TAKEOVER_AUTO_CONTINUE_SECONDS))
-            .to_rfc3339_opts(SecondsFormat::Micros, true);
+            let deadline = (Utc::now() + TimeDelta::seconds(BOT_TAKEOVER_AUTO_CONTINUE_SECONDS))
+                .to_rfc3339_opts(SecondsFormat::Micros, true);
             let action = room
                 .continue_action
                 .get_or_insert_with(|| ContinueActionState {
@@ -1540,7 +1537,8 @@ mod tests {
             .continue_action
             .expect("bot takeover human seat should still be required");
         assert_eq!(
-            action.confirmed_seats, vec![0, 1, 2, 3],
+            action.confirmed_seats,
+            vec![0, 1, 2, 3],
             "bot takeover seat should be auto-confirmed"
         );
         assert_eq!(action.required_seats, vec![0, 1, 2, 3]);

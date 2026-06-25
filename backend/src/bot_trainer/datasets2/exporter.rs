@@ -9,7 +9,8 @@ use std::time::Instant;
 use serde::{Deserialize, Serialize};
 
 use super::super::export::{
-    DatasetSplit, ExportError, export_metadata, split_for_match_id, validate_sample,
+    DatasetSplit, ExportError, export_metadata, is_downweighted_sample, sample_weight_for_outcome,
+    split_for_match_id, validate_sample,
 };
 use super::super::replay::replay_match_to_samples;
 use super::parser::parse_match_text;
@@ -144,16 +145,9 @@ fn process_one_file(path: PathBuf) -> Result<ProcessedDatasets2Match, ExportErro
         }
     };
     let split = split_for_match_id(&record.match_id);
-    let samples = if matches!(
-        record.result,
-        super::super::botzone::BotZoneResult::Huang { .. }
-    ) {
-        Ok(Vec::new())
-    } else {
-        match replay_match_to_samples(&record) {
-            Ok(samples) => Ok(samples),
-            Err(error) => Err(error.to_string()),
-        }
+    let samples = match replay_match_to_samples(&record) {
+        Ok(samples) => Ok(samples),
+        Err(error) => Err(error.to_string()),
     };
     Ok(ProcessedDatasets2Match {
         source,
@@ -188,14 +182,15 @@ fn write_processed_match(
     let split = result
         .split
         .ok_or_else(|| ExportError::Replay("missing split for datasets2 sample".to_string()))?;
-    for sample in samples {
-        if !sample.outcome.won || sample.outcome.fan_count < 8 {
-            report.non_winner_sample_count += 1;
-            continue;
-        }
+    for mut sample in samples {
+        let is_downweighted = is_downweighted_sample(&sample);
+        sample.sample_weight = sample_weight_for_outcome(&sample.outcome);
         if validate_sample(&sample).is_err() {
             report.runtime_illegal_label_count += 1;
             continue;
+        }
+        if is_downweighted {
+            report.non_winner_sample_count += 1;
         }
         writers.write(split, &sample)?;
         report.sample_count += 1;
@@ -318,8 +313,8 @@ mod tests {
         .expect("export succeeds");
 
         assert_eq!(report.match_count, 1);
-        assert_eq!(report.sample_count, 0); // fixture is a drawn game, skipped before replay
-        assert_eq!(report.non_winner_sample_count, 0);
+        assert!(report.sample_count > 0);
+        assert_eq!(report.non_winner_sample_count, report.sample_count);
         assert!(output_dir.join("metadata.json").is_file());
         assert!(output_dir.join("train.jsonl").is_file());
         assert!(output_dir.join("val.jsonl").is_file());
@@ -336,6 +331,23 @@ mod tests {
             })
             .sum::<usize>();
         assert_eq!(total_rows, report.sample_count);
+        let exported = ["train.jsonl", "val.jsonl", "test.jsonl"]
+            .into_iter()
+            .find_map(|name| {
+                std::fs::read_to_string(output_dir.join(name))
+                    .expect("read split")
+                    .lines()
+                    .find(|line| !line.trim().is_empty())
+                    .map(str::to_string)
+            })
+            .expect("exported drawn sample");
+        let row: serde_json::Value = serde_json::from_str(&exported).expect("sample json");
+        assert!(
+            row["outcome"]["round_drawn"]
+                .as_bool()
+                .expect("round drawn")
+        );
+        assert!(row["sample_weight"].as_f64().expect("sample weight") < 1.0);
 
         let _ = std::fs::remove_dir_all(temp_root);
     }
