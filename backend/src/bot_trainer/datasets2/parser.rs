@@ -72,9 +72,12 @@ fn parse_event(line: &str) -> Result<Option<BotZoneEvent>, String> {
             };
             BotZoneAction::Draw { tile_key }
         }
-        "补花后摸牌" | "杠后摸牌" => BotZoneAction::Draw {
-            tile_key: tile.ok_or_else(|| format!("missing draw tile: {line}"))?,
-        },
+        "补花后摸牌" | "杠后摸牌" => {
+            let Some(tile_key) = tile else {
+                return Ok(None);
+            };
+            BotZoneAction::Draw { tile_key }
+        }
         "打牌" => BotZoneAction::Play {
             tile_key: tile.ok_or_else(|| format!("missing play tile: {line}"))?,
         },
