@@ -81,7 +81,8 @@ def value_prompt(prompt: str, default: str) -> str:
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Run the Mahjong SFT dataset/train/export pipeline.")
     parser.add_argument("--input", default=DEFAULT_INPUT_PATH)
-    parser.add_argument("--input-format", choices=("botzone", "datasets2"), default="botzone")
+    parser.add_argument("--input-format", choices=("botzone", "datasets2", "both"), default="botzone")
+    parser.add_argument("--datasets2-input", default=DEFAULT_DATASETS2_INPUT_PATH)
     parser.add_argument("--data-dir", default=DEFAULT_DATA_DIR)
     parser.add_argument("--checkpoint-dir", default=DEFAULT_CHECKPOINT_DIR)
     parser.add_argument("--onnx-output", default=DEFAULT_ONNX_OUTPUT)
@@ -152,12 +153,14 @@ def prompt_pipeline(args: argparse.Namespace, root: Path) -> None:
     print("Mahjong SFT pipeline")
     args.input_format = choice_prompt(
         "Input format",
-        ("botzone", "datasets2"),
+        ("botzone", "datasets2", "both"),
         args.input_format,
     )
     if args.input_format == "datasets2" and args.input == DEFAULT_INPUT_PATH:
         args.input = DEFAULT_DATASETS2_INPUT_PATH
-    args.input = value_prompt("Input replay file", args.input)
+    args.input = value_prompt("Input replay path", args.input)
+    if args.input_format == "both":
+        args.datasets2_input = value_prompt("Datasets2 input directory", args.datasets2_input)
     args.data_dir = value_prompt("Dataset output directory", args.data_dir)
     args.checkpoint_dir = value_prompt("Checkpoint directory", args.checkpoint_dir)
     args.onnx_output = value_prompt("ONNX output path", args.onnx_output)
@@ -187,9 +190,53 @@ def prompt_pipeline(args: argparse.Namespace, root: Path) -> None:
 
 
 def export_dataset(args: argparse.Namespace, root: Path) -> None:
+    if args.input_format == "both":
+        export_combined_dataset(args, root)
+        return
+
+    run_export_command(
+        args=args,
+        root=root,
+        input_format=args.input_format,
+        input_path=args.input,
+        output_dir=Path(args.data_dir),
+    )
+
+
+def export_combined_dataset(args: argparse.Namespace, root: Path) -> None:
+    temp_root = root / ".tmp" / "bot-trainer-v2-sft" / "combined-export"
+    if temp_root.exists():
+        shutil.rmtree(temp_root)
+    botzone_dir = temp_root / "botzone"
+    datasets2_dir = temp_root / "datasets2"
+
+    run_export_command(
+        args=args,
+        root=root,
+        input_format="botzone",
+        input_path=args.input,
+        output_dir=botzone_dir,
+    )
+    run_export_command(
+        args=args,
+        root=root,
+        input_format="datasets2",
+        input_path=args.datasets2_input,
+        output_dir=datasets2_dir,
+    )
+    merge_exported_datasets((botzone_dir, datasets2_dir), resolve_output_path(root, args.data_dir))
+
+
+def run_export_command(
+    args: argparse.Namespace,
+    root: Path,
+    input_format: str,
+    input_path: str,
+    output_dir: Path,
+) -> None:
     binary_name = (
         "export_bot_dataset_v2_datasets2"
-        if args.input_format == "datasets2"
+        if input_format == "datasets2"
         else "export_bot_dataset_v2"
     )
     command = [
@@ -202,15 +249,41 @@ def export_dataset(args: argparse.Namespace, root: Path) -> None:
         binary_name,
         "--",
         "--input",
-        args.input,
+        str(input_path),
         "--output",
-        args.data_dir,
+        str(output_dir),
         "--progress-every",
         str(args.progress_every),
     ]
     if args.max_matches > 0:
         command.extend(["--max-matches", str(args.max_matches)])
     run_command(command, root)
+
+
+def merge_exported_datasets(input_dirs: tuple[Path, ...], output_dir: Path) -> None:
+    if output_dir.exists():
+        shutil.rmtree(output_dir)
+    output_dir.mkdir(parents=True, exist_ok=True)
+
+    first_metadata = input_dirs[0] / "metadata.json"
+    shutil.copyfile(first_metadata, output_dir / "metadata.json")
+    expected_metadata = first_metadata.read_text(encoding="utf-8")
+    for input_dir in input_dirs[1:]:
+        metadata = (input_dir / "metadata.json").read_text(encoding="utf-8")
+        if metadata != expected_metadata:
+            raise SystemExit(f"Dataset metadata mismatch: {input_dir / 'metadata.json'}")
+
+    for split_name in ("train.jsonl", "val.jsonl", "test.jsonl"):
+        with (output_dir / split_name).open("w", encoding="utf-8", newline="\n") as target:
+            for input_dir in input_dirs:
+                source_path = input_dir / split_name
+                with source_path.open("r", encoding="utf-8") as source:
+                    shutil.copyfileobj(source, target)
+
+
+def resolve_output_path(root: Path, path: str) -> Path:
+    output = Path(path)
+    return output if output.is_absolute() else root / output
 
 
 def run_tests(args: argparse.Namespace, root: Path, env: dict[str, str]) -> None:
