@@ -1,3 +1,4 @@
+use std::collections::BTreeMap;
 use std::fs::{self, File};
 use std::io::{BufWriter, Write};
 use std::path::{Path, PathBuf};
@@ -41,19 +42,21 @@ pub fn run_export_directory(
     let mut writers = ShardWriters::new(output_dir)?;
     let mut report = Datasets2ExportReport::default();
 
-    for result in process_files(
+    process_files(
         collect_txt_files(input_dir, options.max_matches)?,
         options.worker_count,
-    )? {
-        if options
-            .max_matches
-            .is_some_and(|limit| report.match_count >= limit)
-        {
-            break;
-        }
-        write_processed_match(result, &mut writers, &mut report)?;
-        maybe_report_progress(options.progress_every, report.match_count, &report, started);
-    }
+        |result| {
+            if options
+                .max_matches
+                .is_some_and(|limit| report.match_count >= limit)
+            {
+                return Ok(());
+            }
+            write_processed_match(result, &mut writers, &mut report)?;
+            maybe_report_progress(options.progress_every, report.match_count, &report, started);
+            Ok(())
+        },
+    )?;
 
     writers.flush()?;
     write_json(output_dir.join("datasets2_export_report.json"), &report)?;
@@ -70,9 +73,13 @@ struct ProcessedDatasets2Match {
 fn process_files(
     paths: Vec<PathBuf>,
     worker_count: usize,
-) -> Result<Vec<ProcessedDatasets2Match>, ExportError> {
+    mut visit: impl FnMut(ProcessedDatasets2Match) -> Result<(), ExportError>,
+) -> Result<(), ExportError> {
     if worker_count <= 1 || paths.len() <= 1 {
-        return paths.into_iter().map(process_one_file).collect();
+        for path in paths {
+            visit(process_one_file(path)?)?;
+        }
+        return Ok(());
     }
 
     let total = paths.len();
@@ -97,11 +104,14 @@ fn process_files(
     }
     drop(sender);
 
-    let mut ordered = std::iter::repeat_with(|| None)
-        .take(total)
-        .collect::<Vec<Option<Result<ProcessedDatasets2Match, ExportError>>>>();
+    let mut pending = BTreeMap::<usize, Result<ProcessedDatasets2Match, ExportError>>::new();
+    let mut next_index = 0_usize;
     for (index, processed) in receiver {
-        ordered[index] = Some(processed);
+        pending.insert(index, processed);
+        while let Some(processed) = pending.remove(&next_index) {
+            visit(processed?)?;
+            next_index += 1;
+        }
     }
     for handle in handles {
         if handle.join().is_err() {
@@ -110,14 +120,12 @@ fn process_files(
             ));
         }
     }
-
-    ordered
-        .into_iter()
-        .map(|value| {
-            value
-                .ok_or_else(|| ExportError::Replay("missing datasets2 worker result".to_string()))?
-        })
-        .collect()
+    if next_index != total {
+        return Err(ExportError::Replay(
+            "missing datasets2 worker result".to_string(),
+        ));
+    }
+    Ok(())
 }
 
 fn process_one_file(path: PathBuf) -> Result<ProcessedDatasets2Match, ExportError> {

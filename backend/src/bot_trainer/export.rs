@@ -145,19 +145,19 @@ pub fn run_export_with_options(
     };
     let total_matches = matches.len();
 
-    for (match_offset, result) in process_matches(matches, options.worker_count)?
-        .into_iter()
-        .enumerate()
-    {
+    let mut written_matches = 0_usize;
+    process_matches(matches, options.worker_count, |result| {
+        written_matches += 1;
         write_processed_match(result, &mut writers, &mut report)?;
         maybe_report_progress(
             options.progress_every,
-            match_offset + 1,
+            written_matches,
             total_matches,
             &report,
             started,
         );
-    }
+        Ok(())
+    })?;
 
     writers.flush()?;
     write_json(output_dir.join("export_report.json"), &report)?;
@@ -182,9 +182,13 @@ struct ProcessedMatch {
 fn process_matches(
     matches: Vec<BotZoneMatch>,
     worker_count: usize,
-) -> Result<Vec<ProcessedMatch>, ExportError> {
+    mut visit: impl FnMut(ProcessedMatch) -> Result<(), ExportError>,
+) -> Result<(), ExportError> {
     if worker_count <= 1 || matches.len() <= 1 {
-        return Ok(matches.into_iter().map(process_one_match).collect());
+        for record in matches {
+            visit(process_one_match(record))?;
+        }
+        return Ok(());
     }
 
     let total = matches.len();
@@ -208,21 +212,24 @@ fn process_matches(
     }
     drop(sender);
 
-    let mut ordered = std::iter::repeat_with(|| None)
-        .take(total)
-        .collect::<Vec<Option<ProcessedMatch>>>();
+    let mut pending = BTreeMap::<usize, ProcessedMatch>::new();
+    let mut next_index = 0_usize;
     for (index, processed) in receiver {
-        ordered[index] = Some(processed);
+        pending.insert(index, processed);
+        while let Some(processed) = pending.remove(&next_index) {
+            visit(processed)?;
+            next_index += 1;
+        }
     }
     for handle in handles {
         if handle.join().is_err() {
             return Err(ExportError::Replay("export worker panicked".to_string()));
         }
     }
-    ordered
-        .into_iter()
-        .map(|value| value.ok_or_else(|| ExportError::Replay("missing worker result".to_string())))
-        .collect()
+    if next_index != total {
+        return Err(ExportError::Replay("missing worker result".to_string()));
+    }
+    Ok(())
 }
 
 fn process_one_match(record: BotZoneMatch) -> ProcessedMatch {
