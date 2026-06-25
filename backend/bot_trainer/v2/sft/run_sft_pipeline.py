@@ -12,6 +12,7 @@ from pathlib import Path
 
 EXPECTED_METADATA_SCHEMA_VERSION = 6
 DEFAULT_INPUT_PATH = "backend/bot_trainer/datasets/data.txt"
+DEFAULT_DATASETS2_INPUT_PATH = "backend/bot_trainer/datasets2"
 DEFAULT_DATA_DIR = "backend/bot_trainer/v2/sft/out"
 DEFAULT_CHECKPOINT_DIR = "backend/bot_trainer/v2/sft/checkpoints"
 DEFAULT_ONNX_OUTPUT = "backend/assets/sft/sft.onnx"
@@ -80,6 +81,7 @@ def value_prompt(prompt: str, default: str) -> str:
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Run the Mahjong SFT dataset/train/export pipeline.")
     parser.add_argument("--input", default=DEFAULT_INPUT_PATH)
+    parser.add_argument("--input-format", choices=("botzone", "datasets2"), default="botzone")
     parser.add_argument("--data-dir", default=DEFAULT_DATA_DIR)
     parser.add_argument("--checkpoint-dir", default=DEFAULT_CHECKPOINT_DIR)
     parser.add_argument("--onnx-output", default=DEFAULT_ONNX_OUTPUT)
@@ -148,6 +150,13 @@ def prompt_pipeline(args: argparse.Namespace, root: Path) -> None:
     if args.yes:
         return
     print("Mahjong SFT pipeline")
+    args.input_format = choice_prompt(
+        "Input format",
+        ("botzone", "datasets2"),
+        args.input_format,
+    )
+    if args.input_format == "datasets2" and args.input == DEFAULT_INPUT_PATH:
+        args.input = DEFAULT_DATASETS2_INPUT_PATH
     args.input = value_prompt("Input replay file", args.input)
     args.data_dir = value_prompt("Dataset output directory", args.data_dir)
     args.checkpoint_dir = value_prompt("Checkpoint directory", args.checkpoint_dir)
@@ -178,6 +187,11 @@ def prompt_pipeline(args: argparse.Namespace, root: Path) -> None:
 
 
 def export_dataset(args: argparse.Namespace, root: Path) -> None:
+    binary_name = (
+        "export_bot_dataset_v2_datasets2"
+        if args.input_format == "datasets2"
+        else "export_bot_dataset_v2"
+    )
     command = [
         "cargo",
         "run",
@@ -185,7 +199,7 @@ def export_dataset(args: argparse.Namespace, root: Path) -> None:
         "--manifest-path",
         "backend/Cargo.toml",
         "--bin",
-        "export_bot_dataset_v2",
+        binary_name,
         "--",
         "--input",
         args.input,
@@ -335,6 +349,8 @@ def export_onnx(args: argparse.Namespace, root: Path, env: dict[str, str]) -> No
 
 def main() -> None:
     args = parse_args()
+    if args.input_format == "datasets2" and args.input == DEFAULT_INPUT_PATH:
+        args.input = DEFAULT_DATASETS2_INPUT_PATH
     root = repo_root()
     prompt_pipeline(args, root)
 

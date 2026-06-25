@@ -113,18 +113,22 @@ def test_sft_pipeline_forwards_auxiliary_training_flags() -> None:
     assert 'parser.add_argument("--risk-loss-weight", type=float, default=1.0)' in pipeline
     assert "Existing dataset found" in pipeline
     assert "skip_export_dataset" in pipeline
-    assert (
-        '"cargo",\n'
-        '        "run",\n'
-        '        "--release",\n'
-        '        "--manifest-path",\n'
-        '        "backend/Cargo.toml",\n'
-        '        "--bin",\n'
-        '        "export_bot_dataset_v2"'
-    ) in pipeline
+    assert '"--bin",' in pipeline
+    assert '"export_bot_dataset_v2"' in pipeline
+    assert '"export_bot_dataset_v2_datasets2"' in pipeline
     assert "Transformer encoder" not in pipeline
     assert "MAHJONG_BOT_MODEL_PATH" in pipeline
     assert "bot::neural::tests::runs_local_onnx_model_when_available" in pipeline
+
+
+def test_sft_pipeline_supports_datasets2_export_source() -> None:
+    script_dir = Path(__file__).resolve().parents[1]
+    pipeline = (script_dir / "run_sft_pipeline.py").read_text(encoding="utf-8")
+
+    assert 'parser.add_argument("--input-format", choices=("botzone", "datasets2"), default="botzone")' in pipeline
+    assert 'DEFAULT_DATASETS2_INPUT_PATH = "backend/bot_trainer/datasets2"' in pipeline
+    assert '"export_bot_dataset_v2_datasets2"' in pipeline
+    assert 'if args.input_format == "datasets2" and args.input == DEFAULT_INPUT_PATH:' in pipeline
 
 
 def test_sft_training_defaults_to_bf16_amp_without_grad_scaling(monkeypatch: pytest.MonkeyPatch) -> None:

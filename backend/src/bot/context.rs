@@ -3,6 +3,8 @@ pub(crate) use crate::projection::bot_view::{
     BotClaimOption, BotContextView as BotContext, BotPlayerView as BotPlayerContext,
     BotSelfKongKind, BotTileView,
 };
+#[cfg(test)]
+use crate::room_scoring::TileCounts;
 
 pub(crate) const TILE_KIND_COUNT: usize = 34;
 pub(crate) const HONOR_TILE_START: usize = 27;
