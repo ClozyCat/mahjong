@@ -28,6 +28,7 @@ pub struct Datasets2ExportReport {
     pub parse_error_count: usize,
     pub replay_error_count: usize,
     pub runtime_illegal_label_count: usize,
+    pub non_winner_sample_count: usize,
     pub skipped_files: Vec<String>,
 }
 
@@ -143,9 +144,16 @@ fn process_one_file(path: PathBuf) -> Result<ProcessedDatasets2Match, ExportErro
         }
     };
     let split = split_for_match_id(&record.match_id);
-    let samples = match replay_match_to_samples(&record) {
-        Ok(samples) => Ok(samples),
-        Err(error) => Err(error.to_string()),
+    let samples = if matches!(
+        record.result,
+        super::super::botzone::BotZoneResult::Huang { .. }
+    ) {
+        Ok(Vec::new())
+    } else {
+        match replay_match_to_samples(&record) {
+            Ok(samples) => Ok(samples),
+            Err(error) => Err(error.to_string()),
+        }
     };
     Ok(ProcessedDatasets2Match {
         source,
@@ -181,6 +189,10 @@ fn write_processed_match(
         .split
         .ok_or_else(|| ExportError::Replay("missing split for datasets2 sample".to_string()))?;
     for sample in samples {
+        if !sample.outcome.won || sample.outcome.fan_count < 8 {
+            report.non_winner_sample_count += 1;
+            continue;
+        }
         if validate_sample(&sample).is_err() {
             report.runtime_illegal_label_count += 1;
             continue;
@@ -289,7 +301,7 @@ mod tests {
     fn exports_datasets2_directory_to_sft_jsonl() {
         let temp_root =
             std::env::temp_dir().join(format!("mahjong-datasets2-test-{}", std::process::id()));
-        let input_dir = temp_root.join("input").join("LIU");
+        let input_dir = temp_root.join("input").join("MO");
         let output_dir = temp_root.join("out");
         std::fs::create_dir_all(&input_dir).expect("create input");
         std::fs::write(input_dir.join("fixture.txt"), FIXTURE).expect("write fixture");
@@ -306,7 +318,8 @@ mod tests {
         .expect("export succeeds");
 
         assert_eq!(report.match_count, 1);
-        assert!(report.sample_count > 0);
+        assert_eq!(report.sample_count, 0); // fixture is a drawn game, skipped before replay
+        assert_eq!(report.non_winner_sample_count, 0);
         assert!(output_dir.join("metadata.json").is_file());
         assert!(output_dir.join("train.jsonl").is_file());
         assert!(output_dir.join("val.jsonl").is_file());
@@ -333,7 +346,7 @@ mod tests {
             "mahjong-datasets2-workers-test-{}",
             std::process::id()
         ));
-        let input_dir = temp_root.join("input").join("LIU");
+        let input_dir = temp_root.join("input").join("MO");
         let single_dir = temp_root.join("single");
         let parallel_dir = temp_root.join("parallel");
         std::fs::create_dir_all(&input_dir).expect("create input");

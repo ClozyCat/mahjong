@@ -40,6 +40,7 @@ pub struct ExportReport {
     pub sample_count: usize,
     pub illegal_label_count: usize,
     pub runtime_illegal_label_count: usize,
+    pub non_winner_sample_count: usize,
     pub parse_error_count: usize,
     pub skipped_match_ids: Vec<String>,
     pub samples_by_split: BTreeMap<DatasetSplit, usize>,
@@ -162,9 +163,10 @@ pub fn run_export_with_options(
     writers.flush()?;
     write_json(output_dir.join("export_report.json"), &report)?;
     eprintln!(
-        "finished export: matches={} samples={} skipped={} illegal_labels={} runtime_illegal_labels={} elapsed_s={:.1}",
+        "finished export: matches={} samples={} non_winner_skipped={} skipped={} illegal_labels={} runtime_illegal_labels={} elapsed_s={:.1}",
         report.match_count,
         report.sample_count,
+        report.non_winner_sample_count,
         report.skipped_match_ids.len(),
         report.illegal_label_count,
         report.runtime_illegal_label_count,
@@ -235,7 +237,11 @@ fn process_matches(
 fn process_one_match(record: BotZoneMatch) -> ProcessedMatch {
     let split = split_for_match_id(&record.match_id);
     let match_id = record.match_id.clone();
-    let samples = replay_match_to_samples(&record).map_err(|error| error.to_string());
+    let samples = if matches!(record.result, super::botzone::BotZoneResult::Huang { .. }) {
+        Ok(Vec::new())
+    } else {
+        replay_match_to_samples(&record).map_err(|error| error.to_string())
+    };
     ProcessedMatch {
         match_id,
         split,
@@ -258,6 +264,10 @@ fn write_processed_match(
         }
     };
     for sample in samples {
+        if !sample.outcome.won || sample.outcome.fan_count < 8 {
+            report.non_winner_sample_count += 1;
+            continue;
+        }
         if validate_sample(&sample).is_err() {
             report.runtime_illegal_label_count += 1;
             continue;
