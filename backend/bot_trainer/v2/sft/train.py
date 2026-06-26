@@ -4,6 +4,7 @@ import argparse
 import json
 import math
 import time
+from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
@@ -98,6 +99,17 @@ def main() -> None:
 
     model_config = model_config_from_args(args)
     model = build_model(model_config).to(device)
+    if args.resume_checkpoint is not None:
+        resumed_epoch, resumed_metrics = load_model_checkpoint(
+            args.resume_checkpoint,
+            model,
+            model_config,
+            device,
+        )
+        print(
+            f"Resumed model weights from {args.resume_checkpoint} "
+            f"(epoch={resumed_epoch}, discard_top1={resumed_metrics.get('discard_top1', 0.0):.4f})"
+        )
     
     # 动态处理模型编译：仅在支持的后端上开启
     if args.compile and hasattr(torch, "compile"):
@@ -121,13 +133,19 @@ def main() -> None:
         f"shuffle_block_size={args.shuffle_block_size} data_cache={args.data_cache_dir or 'auto'}"
     )
     print(f"Training safeguards: grad_clip={args.grad_clip_norm} nan_check=enabled early_stop_patience={args.early_stop_patience}")
-    best_metric = math.inf
-    best_metrics: dict[str, float] = {}
+    print(
+        f"Fine-tune preset={args.fine_tune_preset} "
+        f"low_sample_weight_threshold={args.low_sample_weight_threshold} "
+        f"low_sample_weight_scale={args.low_sample_weight_scale} "
+        f"early_wall_threshold={args.early_wall_threshold} "
+        f"early_wall_scale={args.early_wall_scale}"
+    )
+    checkpoint_tracker = CheckpointTracker()
     epochs_without_improvement = 0
     nan_count = 0
     
     for epoch in range(1, args.epochs + 1):
-        train_loss_weights = with_static_loss_weights(
+        train_loss_weights = build_loss_weights(
             loss_weights_for_epoch(
                 epoch=epoch,
                 warmup_epochs=args.aux_loss_warmup_epochs,
@@ -143,12 +161,17 @@ def main() -> None:
                 risk_start=args.risk_loss_start_weight,
                 risk_target=args.risk_loss_weight,
             ),
+            preset=args.fine_tune_preset,
             risk_pos_weight=args.risk_pos_weight,
             claim_rare_action_weight=args.claim_rare_action_weight,
             self_kong_rare_action_weight=args.self_kong_rare_action_weight,
             hu_positive_weight=args.hu_positive_weight,
+            low_sample_weight_threshold=args.low_sample_weight_threshold,
+            low_sample_weight_scale=args.low_sample_weight_scale,
+            early_wall_threshold=args.early_wall_threshold,
+            early_wall_scale=args.early_wall_scale,
         )
-        val_loss_weights = with_static_loss_weights(
+        val_loss_weights = build_loss_weights(
             selection_loss_weights(
                 claim_weight=args.claim_loss_weight,
                 self_kong_weight=args.self_kong_loss_weight,
@@ -158,10 +181,15 @@ def main() -> None:
                 qualifying_fan_target=args.qualifying_fan_loss_weight,
                 risk_target=args.risk_loss_weight,
             ),
+            preset=args.fine_tune_preset,
             risk_pos_weight=args.risk_pos_weight,
             claim_rare_action_weight=args.claim_rare_action_weight,
             self_kong_rare_action_weight=args.self_kong_rare_action_weight,
             hu_positive_weight=args.hu_positive_weight,
+            low_sample_weight_threshold=0.0,
+            low_sample_weight_scale=1.0,
+            early_wall_threshold=0,
+            early_wall_scale=1.0,
         )
         current_lr = optimizer.param_groups[0]["lr"]
         train_metrics = run_epoch(
@@ -198,10 +226,8 @@ def main() -> None:
             else train_metrics
         )
 
-        selection_metric = val_metrics["loss"]
-        if selection_metric < best_metric:
-            best_metric = selection_metric
-            best_metrics = val_metrics
+        checkpoint_decision = checkpoint_tracker.update(val_metrics)
+        if checkpoint_decision.save_best_loss:
             epochs_without_improvement = 0
             save_checkpoint(
                 args.output / "best.pt",
@@ -213,9 +239,24 @@ def main() -> None:
             )
         else:
             epochs_without_improvement += 1
-            if args.early_stop_patience > 0 and epochs_without_improvement >= args.early_stop_patience:
-                print(f"Early stopping: no improvement for {args.early_stop_patience} epochs")
-                break
+        if checkpoint_decision.save_best_discard_top1:
+            save_checkpoint(
+                args.output / "best_discard_top1.pt",
+                model,
+                train_dataset.metadata,
+                val_metrics,
+                epoch,
+                model_config,
+            )
+        if checkpoint_decision.save_latest:
+            save_checkpoint(
+                args.output / "latest.pt",
+                model,
+                train_dataset.metadata,
+                val_metrics,
+                epoch,
+                model_config,
+            )
 
         print(
             f"Epoch {epoch} Summary: "
@@ -232,9 +273,16 @@ def main() -> None:
             f"kong_precision={val_metrics['kong_precision']:.4f} | "
             f"kong_recall={val_metrics['kong_recall']:.4f}"
         )
+        if args.early_stop_patience > 0 and epochs_without_improvement >= args.early_stop_patience:
+            print(f"Early stopping: no improvement for {args.early_stop_patience} epochs")
+            break
 
     (args.output / "metrics.json").write_text(
-        json.dumps(best_metrics, indent=2, ensure_ascii=False),
+        json.dumps(checkpoint_tracker.best_metrics, indent=2, ensure_ascii=False),
+        encoding="utf-8",
+    )
+    (args.output / "metrics_discard_top1.json").write_text(
+        json.dumps(checkpoint_tracker.best_discard_metrics, indent=2, ensure_ascii=False),
         encoding="utf-8",
     )
 
@@ -244,6 +292,8 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--epochs", type=int, default=20)
     parser.add_argument("--batch-size", type=int, default=1024)
     parser.add_argument("--output", type=Path, required=True)
+    parser.add_argument("--resume-checkpoint", type=Path, default=None,
+        help="Load model weights from a checkpoint before fine-tuning. Optimizer and scheduler are reset.")
     parser.add_argument("--lr", type=float, default=3e-4)
     parser.add_argument("--lr-min", type=float, default=1e-5, help="Minimum learning rate for cosine annealing scheduler")
     parser.add_argument("--weight-decay", type=float, default=1e-4)
@@ -299,6 +349,16 @@ def parse_args() -> argparse.Namespace:
         help="Stop training if validation loss doesn't improve for N epochs. 0 to disable.")
     parser.add_argument("--profile-batches", type=int, default=0,
         help="Print timing breakdown for the first N training batches. 0 to disable.")
+    parser.add_argument("--fine-tune-preset", choices=("none", "policy-only", "low-aux", "low-risk"), default="none",
+        help="Preset loss-weight profile for short fine-tuning runs without changing exported data.")
+    parser.add_argument("--low-sample-weight-threshold", type=float, default=0.0,
+        help="If >0, samples with original sample_weight below this threshold get extra scaling.")
+    parser.add_argument("--low-sample-weight-scale", type=float, default=1.0,
+        help="Extra multiplier for samples below --low-sample-weight-threshold.")
+    parser.add_argument("--early-wall-threshold", type=int, default=0,
+        help="If >0, active-turn samples with wall tiles remaining at or above this threshold get extra scaling.")
+    parser.add_argument("--early-wall-scale", type=float, default=1.0,
+        help="Extra multiplier for samples selected by --early-wall-threshold.")
     return parser.parse_args()
 
 def model_config_from_args(args: argparse.Namespace) -> ModelConfig:
@@ -373,6 +433,37 @@ class BlockShuffleSampler(torch.utils.data.Sampler[int]):
 
     def __len__(self) -> int:
         return self.length
+
+
+@dataclass(frozen=True)
+class CheckpointDecision:
+    save_best_loss: bool
+    save_best_discard_top1: bool
+    save_latest: bool = True
+
+
+class CheckpointTracker:
+    def __init__(self) -> None:
+        self.best_loss = math.inf
+        self.best_discard_top1 = -math.inf
+        self.best_metrics: dict[str, float] = {}
+        self.best_discard_metrics: dict[str, float] = {}
+
+    def update(self, metrics: dict[str, float]) -> CheckpointDecision:
+        loss = float(metrics["loss"])
+        discard_top1 = float(metrics["discard_top1"])
+        save_best_loss = loss < self.best_loss
+        save_best_discard_top1 = discard_top1 > self.best_discard_top1
+        if save_best_loss:
+            self.best_loss = loss
+            self.best_metrics = dict(metrics)
+        if save_best_discard_top1:
+            self.best_discard_top1 = discard_top1
+            self.best_discard_metrics = dict(metrics)
+        return CheckpointDecision(
+            save_best_loss=save_best_loss,
+            save_best_discard_top1=save_best_discard_top1,
+        )
 
 
 def build_loader(
@@ -557,9 +648,20 @@ def compute_losses(
     claim_rare_action_weight: float = DEFAULT_CLAIM_RARE_ACTION_WEIGHT,
     self_kong_rare_action_weight: float = DEFAULT_SELF_KONG_RARE_ACTION_WEIGHT,
     hu_positive_weight: float = DEFAULT_HU_POSITIVE_WEIGHT,
+    low_sample_weight_threshold: float = 0.0,
+    low_sample_weight_scale: float = 1.0,
+    early_wall_threshold: int = 0,
+    early_wall_scale: float = 1.0,
 ) -> dict[str, torch.Tensor]:
     outputs = sanitize_outputs(outputs)
-    sample_weights = sample_weights_for_batch(batch, outputs["discard_logits"].device)
+    sample_weights = sample_weights_for_batch(
+        batch,
+        outputs["discard_logits"].device,
+        low_sample_weight_threshold=low_sample_weight_threshold,
+        low_sample_weight_scale=low_sample_weight_scale,
+        early_wall_threshold=early_wall_threshold,
+        early_wall_scale=early_wall_scale,
+    )
     discard_loss = masked_cross_entropy(
         outputs["discard_logits"],
         batch["discard_mask"],
@@ -726,6 +828,63 @@ def with_static_loss_weights(
     return merged
 
 
+def apply_fine_tune_preset(weights: dict[str, float], preset: str) -> dict[str, float]:
+    adjusted = dict(weights)
+    if preset == "none":
+        return adjusted
+    if preset == "policy-only":
+        for key in (
+            "claim_weight",
+            "self_kong_weight",
+            "hu_weight",
+            "value_weight",
+            "fan_weight",
+            "qualifying_fan_weight",
+            "risk_weight",
+        ):
+            adjusted[key] = 0.0
+        return adjusted
+    if preset == "low-aux":
+        adjusted["claim_weight"] *= 0.5
+        adjusted["self_kong_weight"] *= 0.5
+        adjusted["hu_weight"] *= 0.5
+        adjusted["value_weight"] *= 0.2
+        adjusted["fan_weight"] *= 0.2
+        adjusted["qualifying_fan_weight"] *= 0.2
+        adjusted["risk_weight"] *= 0.2
+        return adjusted
+    if preset == "low-risk":
+        adjusted["risk_weight"] *= 0.2
+        return adjusted
+    raise ValueError(f"unknown fine-tune preset: {preset}")
+
+
+def build_loss_weights(
+    weights: dict[str, float],
+    preset: str,
+    risk_pos_weight: float,
+    claim_rare_action_weight: float,
+    self_kong_rare_action_weight: float,
+    hu_positive_weight: float,
+    low_sample_weight_threshold: float,
+    low_sample_weight_scale: float,
+    early_wall_threshold: int,
+    early_wall_scale: float,
+) -> dict[str, float]:
+    merged = with_static_loss_weights(
+        apply_fine_tune_preset(weights, preset),
+        risk_pos_weight=risk_pos_weight,
+        claim_rare_action_weight=claim_rare_action_weight,
+        self_kong_rare_action_weight=self_kong_rare_action_weight,
+        hu_positive_weight=hu_positive_weight,
+    )
+    merged["low_sample_weight_threshold"] = low_sample_weight_threshold
+    merged["low_sample_weight_scale"] = low_sample_weight_scale
+    merged["early_wall_threshold"] = float(early_wall_threshold)
+    merged["early_wall_scale"] = early_wall_scale
+    return merged
+
+
 def masked_cross_entropy(
     logits: torch.Tensor,
     mask: torch.Tensor,
@@ -751,12 +910,36 @@ def masked_cross_entropy(
     return losses.mean()
 
 
-def sample_weights_for_batch(batch: dict[str, torch.Tensor], device: torch.device) -> torch.Tensor:
+def sample_weights_for_batch(
+    batch: dict[str, torch.Tensor],
+    device: torch.device,
+    low_sample_weight_threshold: float = 0.0,
+    low_sample_weight_scale: float = 1.0,
+    early_wall_threshold: int | float = 0,
+    early_wall_scale: float = 1.0,
+) -> torch.Tensor:
     raw = batch.get("sample_weight")
     if raw is None:
         size = next(iter(batch.values())).shape[0]
-        return torch.ones((size,), device=device, dtype=torch.float32)
-    return raw.to(device=device, dtype=torch.float32).view(-1).clamp_min(0.0)
+        weights = torch.ones((size,), device=device, dtype=torch.float32)
+    else:
+        weights = raw.to(device=device, dtype=torch.float32).view(-1).clamp_min(0.0)
+    if low_sample_weight_threshold > 0.0 and low_sample_weight_scale != 1.0:
+        weights = weights * torch.where(
+            weights < low_sample_weight_threshold,
+            torch.full_like(weights, max(0.0, low_sample_weight_scale)),
+            torch.ones_like(weights),
+        )
+    if early_wall_threshold > 0 and early_wall_scale != 1.0:
+        scalar_features = batch.get("scalar_features")
+        if scalar_features is not None:
+            wall_remaining = scalar_features.to(device=device, dtype=torch.float32)[:, 2] * 84.0
+            weights = weights * torch.where(
+                wall_remaining >= float(early_wall_threshold),
+                torch.full_like(weights, max(0.0, early_wall_scale)),
+                torch.ones_like(weights),
+            )
+    return weights
 
 
 def weighted_mean(losses: torch.Tensor, sample_weights: torch.Tensor) -> torch.Tensor:
@@ -1030,6 +1213,30 @@ def empty_metrics() -> dict[str, float]:
 
 def move_batch(batch: dict[str, torch.Tensor], device: torch.device) -> dict[str, torch.Tensor]:
     return {key: value.to(device, non_blocking=True) for key, value in batch.items()}
+
+def load_model_checkpoint(
+    path: Path,
+    model: torch.nn.Module,
+    expected_config: ModelConfig,
+    device: torch.device,
+) -> tuple[int | None, dict[str, float]]:
+    checkpoint = torch.load(path, map_location=device, weights_only=False)
+    checkpoint_config = ModelConfig.from_dict(checkpoint.get("model_config", {}))
+    if checkpoint_config != expected_config:
+        raise SystemExit(
+            f"Checkpoint model config {checkpoint_config.to_dict()} "
+            f"does not match current config {expected_config.to_dict()}"
+        )
+    model.load_state_dict(checkpoint["model_state"], strict=True)
+    metrics = checkpoint.get("metrics", {})
+    if not isinstance(metrics, dict):
+        metrics = {}
+    epoch = checkpoint.get("epoch")
+    return int(epoch) if epoch is not None else None, {
+        str(key): float(value)
+        for key, value in metrics.items()
+        if isinstance(value, int | float)
+    }
 
 def save_checkpoint(
     path: Path,

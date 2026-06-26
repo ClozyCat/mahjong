@@ -237,6 +237,41 @@ def test_sft_train_accepts_profile_batches(monkeypatch: pytest.MonkeyPatch) -> N
     assert train.parse_args().profile_batches == 8
 
 
+def test_sft_train_accepts_fine_tune_and_reweight_options(monkeypatch: pytest.MonkeyPatch) -> None:
+    import sys
+    import train
+
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        [
+            "train.py",
+            "--data",
+            "backend/bot_trainer/v2/sft/out",
+            "--output",
+            "backend/bot_trainer/v2/sft/checkpoints",
+            "--resume-checkpoint",
+            "backend/bot_trainer/v2/sft/checkpoints/best.pt",
+            "--fine-tune-preset",
+            "low-risk",
+            "--low-sample-weight-scale",
+            "0.75",
+            "--early-wall-threshold",
+            "70",
+            "--early-wall-scale",
+            "0.8",
+        ],
+    )
+
+    args = train.parse_args()
+
+    assert args.resume_checkpoint == Path("backend/bot_trainer/v2/sft/checkpoints/best.pt")
+    assert args.fine_tune_preset == "low-risk"
+    assert args.low_sample_weight_scale == 0.75
+    assert args.early_wall_threshold == 70
+    assert args.early_wall_scale == 0.8
+
+
 def test_block_shuffle_sampler_shuffles_blocks_but_keeps_block_locality() -> None:
     import torch
     from train import BlockShuffleSampler
@@ -285,6 +320,12 @@ def test_sft_pipeline_forwards_prefetch_factor(monkeypatch: pytest.MonkeyPatch) 
         shuffle_block_size=65536,
         profile_batches=20,
         data_cache_dir="cache",
+        resume_checkpoint="checkpoint.pt",
+        fine_tune_preset="low-aux",
+        low_sample_weight_threshold=0.5,
+        low_sample_weight_scale=0.75,
+        early_wall_threshold=70,
+        early_wall_scale=0.8,
         lr=0.00085,
         lr_min=0.00003,
         weight_decay=0.0001,
@@ -323,6 +364,12 @@ def test_sft_pipeline_forwards_prefetch_factor(monkeypatch: pytest.MonkeyPatch) 
     assert command[command.index("--shuffle-mode") + 1] == "block"
     assert command[command.index("--shuffle-block-size") + 1] == "65536"
     assert command[command.index("--profile-batches") + 1] == "20"
+    assert command[command.index("--resume-checkpoint") + 1] == "checkpoint.pt"
+    assert command[command.index("--fine-tune-preset") + 1] == "low-aux"
+    assert command[command.index("--low-sample-weight-threshold") + 1] == "0.5"
+    assert command[command.index("--low-sample-weight-scale") + 1] == "0.75"
+    assert command[command.index("--early-wall-threshold") + 1] == "70"
+    assert command[command.index("--early-wall-scale") + 1] == "0.8"
     assert "--compile" not in command
 
 
@@ -578,6 +625,54 @@ def test_auxiliary_loss_weights_can_disable_value_and_risk() -> None:
     assert losses["loss"].item() < 0.1
 
 
+def test_fine_tune_presets_override_loss_weights() -> None:
+    from train import apply_fine_tune_preset
+
+    weights = {
+        "claim_weight": 1.0,
+        "self_kong_weight": 1.0,
+        "hu_weight": 1.0,
+        "value_weight": 0.75,
+        "fan_weight": 0.5,
+        "qualifying_fan_weight": 0.75,
+        "risk_weight": 1.0,
+    }
+
+    assert apply_fine_tune_preset(weights, "none") == weights
+    policy_only = apply_fine_tune_preset(weights, "policy-only")
+    low_aux = apply_fine_tune_preset(weights, "low-aux")
+    low_risk = apply_fine_tune_preset(weights, "low-risk")
+
+    assert policy_only["claim_weight"] == 0.0
+    assert policy_only["risk_weight"] == 0.0
+    assert low_aux["claim_weight"] == 0.5
+    assert low_aux["value_weight"] == pytest.approx(0.15)
+    assert low_risk["claim_weight"] == 1.0
+    assert low_risk["risk_weight"] == pytest.approx(0.2)
+
+
+def test_checkpoint_tracking_updates_loss_top1_and_latest() -> None:
+    from train import CheckpointTracker
+
+    tracker = CheckpointTracker()
+
+    first = tracker.update({"loss": 2.0, "discard_top1": 0.60})
+    second = tracker.update({"loss": 2.5, "discard_top1": 0.65})
+    third = tracker.update({"loss": 1.8, "discard_top1": 0.64})
+
+    assert first.save_best_loss
+    assert first.save_best_discard_top1
+    assert first.save_latest
+    assert not second.save_best_loss
+    assert second.save_best_discard_top1
+    assert second.save_latest
+    assert third.save_best_loss
+    assert not third.save_best_discard_top1
+    assert third.save_latest
+    assert tracker.best_metrics["loss"] == 1.8
+    assert tracker.best_discard_metrics["discard_top1"] == 0.65
+
+
 def test_sample_weight_scales_selection_loss() -> None:
     import torch
     from train import compute_losses
@@ -621,6 +716,29 @@ def test_sample_weight_scales_selection_loss() -> None:
     )
 
     assert losses["discard_loss"].item() == pytest.approx(0.25 * 0.693147, rel=1e-5)
+
+
+def test_dynamic_sample_reweighting_scales_low_weight_and_early_wall_samples() -> None:
+    import torch
+    from train import sample_weights_for_batch
+
+    scalar_features = torch.zeros((3, SCALAR_FEATURE_COUNT))
+    scalar_features[:, 2] = torch.tensor([80.0 / 84.0, 60.0 / 84.0, 72.0 / 84.0])
+    batch = {
+        "sample_weight": torch.tensor([[0.35], [1.0], [0.75]]),
+        "scalar_features": scalar_features,
+    }
+
+    weights = sample_weights_for_batch(
+        batch,
+        torch.device("cpu"),
+        low_sample_weight_threshold=0.5,
+        low_sample_weight_scale=0.5,
+        early_wall_threshold=70,
+        early_wall_scale=0.8,
+    )
+
+    assert weights.tolist() == pytest.approx([0.14, 1.0, 0.6])
 
 
 def test_gradients_are_finite_rejects_nan_and_inf() -> None:

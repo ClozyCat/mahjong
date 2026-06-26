@@ -97,6 +97,12 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--shuffle-block-size", type=int, default=65536)
     parser.add_argument("--profile-batches", type=int, default=20)
     parser.add_argument("--data-cache-dir", default="")
+    parser.add_argument("--resume-checkpoint", default="")
+    parser.add_argument("--fine-tune-preset", choices=("none", "policy-only", "low-aux", "low-risk"), default="none")
+    parser.add_argument("--low-sample-weight-threshold", type=float, default=0.0)
+    parser.add_argument("--low-sample-weight-scale", type=float, default=1.0)
+    parser.add_argument("--early-wall-threshold", type=int, default=0)
+    parser.add_argument("--early-wall-scale", type=float, default=1.0)
     parser.add_argument("--python-exe", default=sys.executable)
     parser.add_argument("--device", choices=("auto", "cuda", "cpu", "dml"), default="auto")
     parser.add_argument("--lr", type=float, default=0.00085)
@@ -332,6 +338,16 @@ def train_model(args: argparse.Namespace, root: Path, env: dict[str, str]) -> No
         str(args.batch_size),
         "--output",
         args.checkpoint_dir,
+        "--fine-tune-preset",
+        args.fine_tune_preset,
+        "--low-sample-weight-threshold",
+        str(args.low_sample_weight_threshold),
+        "--low-sample-weight-scale",
+        str(args.low_sample_weight_scale),
+        "--early-wall-threshold",
+        str(args.early_wall_threshold),
+        "--early-wall-scale",
+        str(args.early_wall_scale),
         "--device",
         args.device,
         "--num-workers",
@@ -391,6 +407,8 @@ def train_model(args: argparse.Namespace, root: Path, env: dict[str, str]) -> No
         "--early-stop-patience",
         str(args.early_stop_patience),
     ]
+    if args.resume_checkpoint:
+        command.extend(["--resume-checkpoint", args.resume_checkpoint])
     if args.amp is False:
         command.append("--no-amp")
     elif args.amp is True:
