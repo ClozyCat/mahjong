@@ -1,0 +1,23 @@
+{
+  "created_at_utc": "2026-06-26T10:08:31.581209+00:00",
+  "onnx": "backend/assets/sft/sft.onnx",
+  "checkpoint": "backend/bot_trainer/v2/sft/checkpoints/best.pt",
+  "model_config": {
+    "tile_plane_count": 10,
+    "scalar_feature_count": 13,
+    "discard_sequence_length": 32,
+    "discard_event_feature_count": 40
+  },
+  "outputs": [
+    "discard_logits",
+    "claim_logits",
+    "self_kong_logits",
+    "hu_logits",
+    "value_for_risk",
+    "fan_value",
+    "qualifying_fan_value",
+    "opponent_tenpai_logits",
+    "opponent_risk_logits"
+  ],
+  "exported_component": "lightweight_actor"
+}
