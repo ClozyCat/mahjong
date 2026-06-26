@@ -95,7 +95,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--prefetch-factor", type=int, default=4)
     parser.add_argument("--shuffle-mode", choices=("global", "block"), default="block")
     parser.add_argument("--shuffle-block-size", type=int, default=65536)
-    parser.add_argument("--profile-batches", type=int, default=20)
+    parser.add_argument("--profile-batches", type=int, default=0)
     parser.add_argument("--data-cache-dir", default="")
     parser.add_argument("--resume-checkpoint", default="")
     parser.add_argument("--fine-tune-preset", choices=("none", "policy-only", "low-aux", "low-risk"), default="none")

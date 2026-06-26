@@ -177,7 +177,7 @@ def test_sft_pipeline_forwards_auxiliary_training_flags() -> None:
     assert 'parser.add_argument("--prefetch-factor", type=int, default=4)' in pipeline
     assert 'parser.add_argument("--shuffle-mode", choices=("global", "block"), default="block")' in pipeline
     assert 'parser.add_argument("--shuffle-block-size", type=int, default=65536)' in pipeline
-    assert 'parser.add_argument("--profile-batches", type=int, default=20)' in pipeline
+    assert 'parser.add_argument("--profile-batches", type=int, default=0)' in pipeline
     assert 'parser.add_argument("--amp", dest="amp", action="store_true", default=None)' in pipeline
     assert 'parser.add_argument("--no-amp", dest="amp", action="store_false")' in pipeline
     assert 'parser.add_argument("--no-tf32", action="store_true")' in pipeline
@@ -318,7 +318,7 @@ def test_sft_pipeline_forwards_prefetch_factor(monkeypatch: pytest.MonkeyPatch) 
         prefetch_factor=4,
         shuffle_mode="block",
         shuffle_block_size=65536,
-        profile_batches=20,
+        profile_batches=0,
         data_cache_dir="cache",
         resume_checkpoint="checkpoint.pt",
         fine_tune_preset="low-aux",
@@ -363,7 +363,7 @@ def test_sft_pipeline_forwards_prefetch_factor(monkeypatch: pytest.MonkeyPatch) 
     assert command[command.index("--prefetch-factor") + 1] == "4"
     assert command[command.index("--shuffle-mode") + 1] == "block"
     assert command[command.index("--shuffle-block-size") + 1] == "65536"
-    assert command[command.index("--profile-batches") + 1] == "20"
+    assert command[command.index("--profile-batches") + 1] == "0"
     assert command[command.index("--resume-checkpoint") + 1] == "checkpoint.pt"
     assert command[command.index("--fine-tune-preset") + 1] == "low-aux"
     assert command[command.index("--low-sample-weight-threshold") + 1] == "0.5"
