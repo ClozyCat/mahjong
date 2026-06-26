@@ -20,6 +20,7 @@ DISCARD_SEQUENCE_LENGTH = 32
 DISCARD_EVENT_FEATURE_COUNT = 40
 IGNORE_INDEX = -100
 DISK_CACHE_VERSION = 11
+CACHE_FLUSH_EVERY_ROWS = 100_000
 FAN_TARGET_SCALE = 16.0
 QUALIFYING_FAN_TARGET = 8.0
 EXPECTED_METADATA_SCHEMA_VERSION = 7
@@ -88,16 +89,21 @@ class MahjongDecisionDataset(Dataset):
         }
 
         row_index = 0
+        repaired_rows = 0
         with self.jsonl_path.open("r", encoding="utf-8") as handle:
             with tqdm(total=self.num_samples, desc=f"Caching {self.jsonl_path.name}") as pbar:
-                for line in handle:
+                for line_number, line in enumerate(handle, start=1):
                     line = line.strip()
                     if not line:
                         continue
-                    encoded = encode_row(json.loads(line), self.metadata, self.lookups)
+                    row, repaired = decode_jsonl_row(line, self.jsonl_path, line_number)
+                    if repaired:
+                        repaired_rows += 1
+                    encoded = encode_row(row, self.metadata, self.lookups)
                     for name, mmap_array in arrays.items():
                         mmap_array[row_index] = encoded[name]
                     row_index += 1
+                    flush_disk_cache_arrays(arrays, row_index)
                     pbar.update(1)
 
         if row_index != self.num_samples:
@@ -105,6 +111,12 @@ class MahjongDecisionDataset(Dataset):
 
         for mmap_array in arrays.values():
             mmap_array.flush()
+
+        if repaired_rows:
+            print(
+                f"Warning: repaired {repaired_rows} JSONL row(s) with corrupt "
+                f"control-character quotes in {self.jsonl_path}"
+            )
 
         manifest = expected_cache_manifest(self, self.num_samples)
         manifest_path.write_text(
@@ -152,9 +164,9 @@ class MahjongDecisionDataset(Dataset):
 
     def get_batch(self, indices: Sequence[int]) -> dict[str, torch.Tensor]:
         # 每个 batch 只从磁盘映射缓存读取当前索引，避免整份数据常驻内存。
-        index_array = np.asarray(list(indices), dtype=np.int64)
+        indexer = batch_indexer_for_indices(indices)
         batch = {
-            name: torch.from_numpy(np.asarray(mmap_array[index_array]))
+            name: torch.from_numpy(np.asarray(mmap_array[indexer]).copy())
             for name, mmap_array in self._arrays.items()
         }
         return batch
@@ -247,6 +259,68 @@ def cache_is_current(manifest: dict[str, Any] | None, dataset: MahjongDecisionDa
 def count_jsonl_rows(jsonl_path: Path) -> int:
     with jsonl_path.open("rb") as handle:
         return sum(1 for line in handle if line.strip())
+
+
+def batch_indexer_for_indices(indices: Sequence[int]) -> slice | np.ndarray:
+    index_array = np.asarray(list(indices), dtype=np.int64)
+    if index_array.size == 0:
+        return index_array
+    if index_array.size == 1:
+        start = int(index_array[0])
+        return slice(start, start + 1)
+    if np.all(index_array[1:] == index_array[:-1] + 1):
+        start = int(index_array[0])
+        return slice(start, start + int(index_array.size))
+    return index_array
+
+
+def decode_jsonl_row(line: str, jsonl_path: Path, line_number: int) -> tuple[dict[str, Any], bool]:
+    try:
+        return json.loads(line), False
+    except json.JSONDecodeError as exc:
+        repaired_line = repair_control_character_quotes(line)
+        if repaired_line != line:
+            try:
+                return json.loads(repaired_line), True
+            except json.JSONDecodeError:
+                pass
+        raise ValueError(format_jsonl_decode_error(jsonl_path, line_number, line, exc)) from exc
+
+
+def repair_control_character_quotes(line: str) -> str:
+    return "".join(
+        '"'
+        if ord(char) < 32 and char not in ("\t", "\n", "\r")
+        else char
+        for char in line
+    )
+
+
+def format_jsonl_decode_error(
+    jsonl_path: Path,
+    line_number: int,
+    line: str,
+    error: json.JSONDecodeError,
+) -> str:
+    start = max(0, error.pos - 80)
+    end = min(len(line), error.pos + 80)
+    snippet = line[start:end].encode("unicode_escape").decode("ascii")
+    return (
+        f"invalid JSON in {jsonl_path} at line {line_number}, "
+        f"column {error.colno}: {error.msg}; snippet={snippet}"
+    )
+
+
+def flush_disk_cache_arrays(
+    arrays: dict[str, Any],
+    row_index: int,
+    flush_every_rows: int = CACHE_FLUSH_EVERY_ROWS,
+) -> bool:
+    if flush_every_rows <= 0 or row_index <= 0 or row_index % flush_every_rows != 0:
+        return False
+    for mmap_array in arrays.values():
+        mmap_array.flush()
+    return True
 
 
 def load_metadata(metadata_path: Path) -> dict[str, Any]:

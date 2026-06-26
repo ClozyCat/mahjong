@@ -3,6 +3,7 @@ from __future__ import annotations
 import argparse
 import json
 import math
+import time
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
@@ -68,9 +69,29 @@ def main() -> None:
         else None
     )
 
-    train_loader = build_loader(train_dataset, args.batch_size, True, args.num_workers, device)
+    train_loader = build_loader(
+        train_dataset,
+        args.batch_size,
+        True,
+        args.num_workers,
+        device,
+        args.prefetch_factor,
+        args.shuffle_mode,
+        args.shuffle_block_size,
+        args.seed,
+    )
     val_loader = (
-        build_loader(val_dataset, args.batch_size, False, args.num_workers, device)
+        build_loader(
+            val_dataset,
+            args.batch_size,
+            False,
+            args.num_workers,
+            device,
+            args.prefetch_factor,
+            "global",
+            args.shuffle_block_size,
+            args.seed,
+        )
         if val_dataset is not None and len(val_dataset) > 0
         else None
     )
@@ -95,7 +116,9 @@ def main() -> None:
     )
     print(
         f"device={device} amp={amp_config.enabled} amp_dtype={amp_dtype_name(amp_config)} "
-        f"math={math_mode} num_workers={args.num_workers} data_cache={args.data_cache_dir or 'auto'}"
+        f"math={math_mode} num_workers={args.num_workers} "
+        f"prefetch_factor={args.prefetch_factor} shuffle_mode={args.shuffle_mode} "
+        f"shuffle_block_size={args.shuffle_block_size} data_cache={args.data_cache_dir or 'auto'}"
     )
     print(f"Training safeguards: grad_clip={args.grad_clip_norm} nan_check=enabled early_stop_patience={args.early_stop_patience}")
     best_metric = math.inf
@@ -146,6 +169,7 @@ def main() -> None:
             loss_weights=train_loss_weights,
             epoch_desc=f"Train Epoch {epoch}/{args.epochs}",
             grad_clip_norm=args.grad_clip_norm,
+            profile_batches=args.profile_batches,
         )
 
         # NaN检测和early stopping
@@ -168,6 +192,7 @@ def main() -> None:
                 loss_weights=val_loss_weights,
                 epoch_desc=f"Val Epoch {epoch}/{args.epochs}",
                 grad_clip_norm=None,  # 验证时不需要梯度裁剪
+                profile_batches=0,
             )
             if val_loader is not None
             else train_metrics
@@ -224,6 +249,12 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--weight-decay", type=float, default=1e-4)
     parser.add_argument("--device", default="auto")
     parser.add_argument("--num-workers", type=int, default=0)
+    parser.add_argument("--prefetch-factor", type=int, default=2,
+        help="DataLoader batches prefetched per worker. Only used when num-workers > 0; set <=0 to disable.")
+    parser.add_argument("--shuffle-mode", choices=("global", "block"), default="global",
+        help="Use global random shuffle or block shuffle for disk-backed cache locality.")
+    parser.add_argument("--shuffle-block-size", type=int, default=65536,
+        help="Number of contiguous samples per shuffled block when --shuffle-mode=block.")
     parser.add_argument("--data-cache-dir", type=Path, default=None)
     parser.add_argument("--rebuild-data-cache", action="store_true")
     amp_group = parser.add_mutually_exclusive_group()
@@ -266,6 +297,8 @@ def parse_args() -> argparse.Namespace:
         help="Maximum number of consecutive NaN losses before stopping training.")
     parser.add_argument("--early-stop-patience", type=int, default=0,
         help="Stop training if validation loss doesn't improve for N epochs. 0 to disable.")
+    parser.add_argument("--profile-batches", type=int, default=0,
+        help="Print timing breakdown for the first N training batches. 0 to disable.")
     return parser.parse_args()
 
 def model_config_from_args(args: argparse.Namespace) -> ModelConfig:
@@ -318,23 +351,60 @@ class DatasetBatchCollator:
         return self.dataset.get_batch(indices)
 
 
+class BlockShuffleSampler(torch.utils.data.Sampler[int]):
+    def __init__(self, length: int, block_size: int, seed: int = 0) -> None:
+        if block_size <= 0:
+            raise ValueError("block_size must be positive")
+        self.length = length
+        self.block_size = block_size
+        self.seed = seed
+        self.epoch = 0
+
+    def __iter__(self):
+        generator = torch.Generator()
+        generator.manual_seed(self.seed + self.epoch)
+        self.epoch += 1
+        blocks = list(range(0, self.length, self.block_size))
+        order = torch.randperm(len(blocks), generator=generator).tolist()
+        for block_index in order:
+            start = blocks[block_index]
+            end = min(start + self.block_size, self.length)
+            yield from range(start, end)
+
+    def __len__(self) -> int:
+        return self.length
+
+
 def build_loader(
     dataset: MahjongDecisionDataset,
     batch_size: int,
     shuffle: bool,
     num_workers: int,
     device: torch.device,
+    prefetch_factor: int = 2,
+    shuffle_mode: str = "global",
+    shuffle_block_size: int = 65536,
+    seed: int = 0,
 ) -> DataLoader:
+    sampler = None
+    loader_shuffle = shuffle
+    if shuffle and shuffle_mode == "block":
+        sampler = BlockShuffleSampler(len(dataset), shuffle_block_size, seed)
+        loader_shuffle = False
+
     kwargs: dict[str, Any] = {
         "batch_size": batch_size,
-        "shuffle": shuffle,
+        "shuffle": loader_shuffle,
         "num_workers": num_workers,
         "collate_fn": DatasetBatchCollator(dataset),
         "pin_memory": device.type == "cuda", # pin_memory 仅适用于真正的 cuda/ROCm 后端
     }
+    if sampler is not None:
+        kwargs["sampler"] = sampler
     if num_workers > 0:
         kwargs["persistent_workers"] = True
-        kwargs["prefetch_factor"] = 2
+        if prefetch_factor > 0:
+            kwargs["prefetch_factor"] = prefetch_factor
     return DataLoader(dataset, **kwargs)
 
 def run_epoch(
@@ -347,6 +417,7 @@ def run_epoch(
     loss_weights: dict[str, float] | None = None,
     epoch_desc: str = "",
     grad_clip_norm: float | None = None,
+    profile_batches: int = 0,
 ) -> dict[str, float]:
     if loader is None:
         return empty_metrics()
@@ -355,12 +426,19 @@ def run_epoch(
     model.train(is_training)
     totals = MetricTotals(device)
 
-    pbar = tqdm(loader, desc=epoch_desc, leave=False, dynamic_ncols=True)
+    pbar = tqdm(total=len(loader), desc=epoch_desc, leave=False, dynamic_ncols=True)
     nan_batch_count = 0
     max_nan_batches = 5  # 单个epoch内最多容忍5个NaN batch
 
-    for i, batch in enumerate(pbar):
+    iterator = iter(loader)
+    next_batch_started_at = time.perf_counter()
+    for i in range(len(loader)):
+        batch = next(iterator)
+        batch_ready_at = time.perf_counter()
+        synchronize_device(device)
         batch = move_batch(batch, device)
+        synchronize_device(device)
+        batch_moved_at = time.perf_counter()
         with torch.set_grad_enabled(is_training):
             with torch.amp.autocast(
                 amp_config.device_type,
@@ -370,6 +448,8 @@ def run_epoch(
                 outputs = forward_model(model, batch)
                 losses = compute_losses(outputs, batch, **(loss_weights or {}))
             loss = losses["loss"]
+            synchronize_device(device)
+            forward_done_at = time.perf_counter()
 
             # NaN/Inf检测
             if torch.isnan(loss) or torch.isinf(loss):
@@ -407,13 +487,53 @@ def run_epoch(
 
                 scaler.step(optimizer)
                 scaler.update()
+                synchronize_device(device)
 
         totals.update(outputs, batch, losses)
+        step_done_at = time.perf_counter()
 
         if i % 10 == 0:
             pbar.set_postfix({"loss": f"{loss.item():.4f}"})
+        pbar.update(1)
+
+        if profile_batches > 0 and i < profile_batches:
+            print_profile_timing(
+                epoch_desc,
+                i,
+                data_wait=batch_ready_at - next_batch_started_at,
+                h2d=batch_moved_at - batch_ready_at,
+                forward_loss=forward_done_at - batch_moved_at,
+                backward_step=step_done_at - forward_done_at,
+                total=step_done_at - next_batch_started_at,
+            )
+        next_batch_started_at = time.perf_counter()
 
     return totals.as_metrics()
+
+
+def synchronize_device(device: torch.device) -> None:
+    if device.type == "cuda":
+        torch.cuda.synchronize(device)
+
+
+def print_profile_timing(
+    epoch_desc: str,
+    batch_index: int,
+    data_wait: float,
+    h2d: float,
+    forward_loss: float,
+    backward_step: float,
+    total: float,
+) -> None:
+    print(
+        "[profile] "
+        f"{epoch_desc} batch={batch_index} "
+        f"data_wait_ms={data_wait * 1000:.1f} "
+        f"h2d_ms={h2d * 1000:.1f} "
+        f"forward_loss_ms={forward_loss * 1000:.1f} "
+        f"backward_step_ms={backward_step * 1000:.1f} "
+        f"total_step_ms={total * 1000:.1f}"
+    )
 
 
 def gradients_are_finite(parameters) -> bool:

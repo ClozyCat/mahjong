@@ -10,7 +10,10 @@ from dataset import (
     DISCARD_SEQUENCE_LENGTH,
     IGNORE_INDEX,
     SCALAR_FEATURE_COUNT,
+    batch_indexer_for_indices,
+    decode_jsonl_row,
     encode_row,
+    flush_disk_cache_arrays,
     load_metadata,
 )
 
@@ -98,6 +101,55 @@ def test_load_metadata_rejects_old_schema_with_export_hint(tmp_path: Path) -> No
         load_metadata(metadata_path)
 
 
+def test_decode_jsonl_row_repairs_corrupt_control_character_quote() -> None:
+    line = '{"context":{"discard_history":[{"seat_index":1},{\x02seat_index":3}]}}\n'
+
+    row, repaired = decode_jsonl_row(line, Path("train.jsonl"), 11208353)
+
+    assert repaired is True
+    assert row["context"]["discard_history"][1]["seat_index"] == 3
+
+
+def test_decode_jsonl_row_reports_line_and_column_for_unrepairable_json() -> None:
+    with pytest.raises(ValueError, match=r"bad\.jsonl.*line 7.*column"):
+        decode_jsonl_row('{"context": {bad}}\n', Path("bad.jsonl"), 7)
+
+
+def test_flush_disk_cache_arrays_flushes_periodically() -> None:
+    class FlushRecorder:
+        def __init__(self) -> None:
+            self.flush_count = 0
+
+        def flush(self) -> None:
+            self.flush_count += 1
+
+    first = FlushRecorder()
+    second = FlushRecorder()
+    arrays = {"first": first, "second": second}
+
+    assert flush_disk_cache_arrays(arrays, 1, flush_every_rows=2) is False
+    assert first.flush_count == 0
+    assert second.flush_count == 0
+
+    assert flush_disk_cache_arrays(arrays, 2, flush_every_rows=2) is True
+    assert first.flush_count == 1
+    assert second.flush_count == 1
+
+
+def test_batch_indexer_uses_slice_for_contiguous_indices() -> None:
+    indexer = batch_indexer_for_indices([12, 13, 14])
+
+    assert isinstance(indexer, slice)
+    assert indexer == slice(12, 15)
+
+
+def test_batch_indexer_keeps_array_for_non_contiguous_indices() -> None:
+    indexer = batch_indexer_for_indices([12, 14, 13])
+
+    assert not isinstance(indexer, slice)
+    assert indexer.tolist() == [12, 14, 13]
+
+
 def test_sft_pipeline_forwards_auxiliary_training_flags() -> None:
     script_dir = Path(__file__).resolve().parents[1]
     pipeline = (script_dir / "run_sft_pipeline.py").read_text(encoding="utf-8")
@@ -118,13 +170,21 @@ def test_sft_pipeline_forwards_auxiliary_training_flags() -> None:
 
     for flag in required_flags:
         assert flag in pipeline
-    assert 'parser.add_argument("--lr", type=float, default=0.0003)' in pipeline
-    assert 'parser.add_argument("--lr-min", type=float, default=0.00001)' in pipeline
+    assert 'parser.add_argument("--lr", type=float, default=0.00085)' in pipeline
+    assert 'parser.add_argument("--lr-min", type=float, default=0.00003)' in pipeline
+    assert 'parser.add_argument("--batch-size", type=int, default=8192)' in pipeline
+    assert 'parser.add_argument("--num-workers", type=int, default=6)' in pipeline
+    assert 'parser.add_argument("--prefetch-factor", type=int, default=4)' in pipeline
+    assert 'parser.add_argument("--shuffle-mode", choices=("global", "block"), default="block")' in pipeline
+    assert 'parser.add_argument("--shuffle-block-size", type=int, default=65536)' in pipeline
+    assert 'parser.add_argument("--profile-batches", type=int, default=20)' in pipeline
     assert 'parser.add_argument("--amp", dest="amp", action="store_true", default=None)' in pipeline
     assert 'parser.add_argument("--no-amp", dest="amp", action="store_false")' in pipeline
     assert 'parser.add_argument("--no-tf32", action="store_true")' in pipeline
+    assert 'parser.add_argument("--compile-model", action="store_true")' in pipeline
     assert 'parser.add_argument("--value-loss-weight", type=float, default=0.75)' in pipeline
     assert 'parser.add_argument("--risk-loss-weight", type=float, default=1.0)' in pipeline
+    assert 'parser.add_argument("--early-stop-patience", type=int, default=5)' in pipeline
     assert "Existing dataset found" in pipeline
     assert "skip_export_dataset" in pipeline
     assert '"--bin",' in pipeline
@@ -133,6 +193,137 @@ def test_sft_pipeline_forwards_auxiliary_training_flags() -> None:
     assert "Transformer encoder" not in pipeline
     assert "MAHJONG_BOT_MODEL_PATH" in pipeline
     assert "bot::neural::tests::runs_local_onnx_model_when_available" in pipeline
+
+
+def test_sft_train_accepts_prefetch_factor(monkeypatch: pytest.MonkeyPatch) -> None:
+    import sys
+    import train
+
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        [
+            "train.py",
+            "--data",
+            "backend/bot_trainer/v2/sft/out",
+            "--output",
+            "backend/bot_trainer/v2/sft/checkpoints",
+            "--prefetch-factor",
+            "4",
+        ],
+    )
+
+    assert train.parse_args().prefetch_factor == 4
+
+
+def test_sft_train_accepts_profile_batches(monkeypatch: pytest.MonkeyPatch) -> None:
+    import sys
+    import train
+
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        [
+            "train.py",
+            "--data",
+            "backend/bot_trainer/v2/sft/out",
+            "--output",
+            "backend/bot_trainer/v2/sft/checkpoints",
+            "--profile-batches",
+            "8",
+        ],
+    )
+
+    assert train.parse_args().profile_batches == 8
+
+
+def test_block_shuffle_sampler_shuffles_blocks_but_keeps_block_locality() -> None:
+    import torch
+    from train import BlockShuffleSampler
+
+    sampler = BlockShuffleSampler(12, block_size=3, seed=7)
+    order = list(iter(sampler))
+
+    assert sorted(order) == list(range(12))
+    assert order != list(range(10))
+    for offset in range(0, len(order), 3):
+        block = order[offset : offset + 3]
+        assert block == list(range(block[0], block[0] + len(block)))
+
+
+def test_block_shuffle_sampler_changes_order_between_epochs() -> None:
+    from train import BlockShuffleSampler
+
+    sampler = BlockShuffleSampler(60, block_size=3, seed=7)
+
+    first_epoch = list(iter(sampler))
+    second_epoch = list(iter(sampler))
+
+    assert sorted(first_epoch) == sorted(second_epoch)
+    assert first_epoch != second_epoch
+
+
+def test_sft_pipeline_forwards_prefetch_factor(monkeypatch: pytest.MonkeyPatch) -> None:
+    import argparse
+    import run_sft_pipeline
+
+    captured: list[list[str]] = []
+
+    def fake_run_command(command: list[str], _root: Path, _env: dict[str, str]) -> None:
+        captured.append(command)
+
+    args = argparse.Namespace(
+        python_exe="python",
+        data_dir="data",
+        epochs=1,
+        batch_size=8192,
+        checkpoint_dir="checkpoints",
+        device="cuda",
+        num_workers=6,
+        prefetch_factor=4,
+        shuffle_mode="block",
+        shuffle_block_size=65536,
+        profile_batches=20,
+        data_cache_dir="cache",
+        lr=0.00085,
+        lr_min=0.00003,
+        weight_decay=0.0001,
+        claim_loss_weight=1.0,
+        self_kong_loss_weight=1.0,
+        hu_loss_weight=1.0,
+        value_loss_weight=0.75,
+        fan_loss_weight=0.5,
+        qualifying_fan_loss_weight=0.75,
+        risk_loss_weight=1.0,
+        risk_pos_weight=300.0,
+        value_loss_start_weight=0.25,
+        fan_loss_start_weight=0.1,
+        qualifying_fan_loss_start_weight=0.1,
+        risk_loss_start_weight=0.25,
+        aux_loss_warmup_epochs=4,
+        claim_rare_action_weight=2.0,
+        self_kong_rare_action_weight=3.0,
+        hu_positive_weight=3.0,
+        grad_clip_norm=1.0,
+        max_nan_tolerance=2,
+        early_stop_patience=5,
+        amp=None,
+        no_tf32=False,
+        compile_model=False,
+        rebuild_data_cache=False,
+    )
+    monkeypatch.setattr(run_sft_pipeline, "run_command", fake_run_command)
+
+    run_sft_pipeline.train_model(args, Path("."), {})
+
+    command = captured[0]
+    assert command[command.index("--batch-size") + 1] == "8192"
+    assert command[command.index("--num-workers") + 1] == "6"
+    assert command[command.index("--prefetch-factor") + 1] == "4"
+    assert command[command.index("--shuffle-mode") + 1] == "block"
+    assert command[command.index("--shuffle-block-size") + 1] == "65536"
+    assert command[command.index("--profile-batches") + 1] == "20"
+    assert "--compile" not in command
 
 
 def test_sft_pipeline_supports_datasets2_export_source() -> None:
@@ -273,6 +464,30 @@ def test_dataset_reads_batches_from_disk_cache(tmp_path: Path) -> None:
     assert batch["discard_target"].tolist() == [0]
     assert batch["discard_mask"].dtype == torch.bool
     assert loader_batch["discard_target"].tolist() == [0]
+
+
+def test_block_shuffle_loader_reads_batches_from_disk_cache(tmp_path: Path) -> None:
+    import pytest
+
+    torch = pytest.importorskip("torch")
+    from dataset import MahjongDecisionDataset
+    from train import build_loader
+
+    metadata_path, train_path = write_fixture(tmp_path)
+    dataset = MahjongDecisionDataset(train_path, metadata_path, cache_dir=tmp_path / "cache")
+
+    loader = build_loader(
+        dataset,
+        batch_size=1,
+        shuffle=True,
+        num_workers=0,
+        device=torch.device("cpu"),
+        shuffle_mode="block",
+        shuffle_block_size=1,
+    )
+    batch = next(iter(loader))
+
+    assert batch["discard_target"].tolist() == [0]
 
 
 def test_chow_claim_target_uses_discard_position(tmp_path: Path) -> None:
