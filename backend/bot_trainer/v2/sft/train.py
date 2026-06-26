@@ -79,6 +79,7 @@ def main() -> None:
         args.prefetch_factor,
         args.shuffle_mode,
         args.shuffle_block_size,
+        args.shuffle_chunk_size,
         args.seed,
     )
     val_loader = (
@@ -91,6 +92,7 @@ def main() -> None:
             args.prefetch_factor,
             "global",
             args.shuffle_block_size,
+            args.shuffle_chunk_size,
             args.seed,
         )
         if val_dataset is not None and len(val_dataset) > 0
@@ -130,7 +132,9 @@ def main() -> None:
         f"device={device} amp={amp_config.enabled} amp_dtype={amp_dtype_name(amp_config)} "
         f"math={math_mode} num_workers={args.num_workers} "
         f"prefetch_factor={args.prefetch_factor} shuffle_mode={args.shuffle_mode} "
-        f"shuffle_block_size={args.shuffle_block_size} data_cache={args.data_cache_dir or 'auto'}"
+        f"shuffle_block_size={args.shuffle_block_size} "
+        f"shuffle_chunk_size={args.shuffle_chunk_size} "
+        f"data_cache={args.data_cache_dir or 'auto'}"
     )
     print(f"Training safeguards: grad_clip={args.grad_clip_norm} nan_check=enabled early_stop_patience={args.early_stop_patience}")
     print(
@@ -290,21 +294,23 @@ def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser()
     parser.add_argument("--data", type=Path, required=True)
     parser.add_argument("--epochs", type=int, default=20)
-    parser.add_argument("--batch-size", type=int, default=1024)
+    parser.add_argument("--batch-size", type=int, default=4096)
     parser.add_argument("--output", type=Path, required=True)
     parser.add_argument("--resume-checkpoint", type=Path, default=None,
         help="Load model weights from a checkpoint before fine-tuning. Optimizer and scheduler are reset.")
-    parser.add_argument("--lr", type=float, default=3e-4)
-    parser.add_argument("--lr-min", type=float, default=1e-5, help="Minimum learning rate for cosine annealing scheduler")
+    parser.add_argument("--lr", type=float, default=4.25e-4)
+    parser.add_argument("--lr-min", type=float, default=1.5e-5, help="Minimum learning rate for cosine annealing scheduler")
     parser.add_argument("--weight-decay", type=float, default=1e-4)
     parser.add_argument("--device", default="auto")
     parser.add_argument("--num-workers", type=int, default=0)
     parser.add_argument("--prefetch-factor", type=int, default=2,
         help="DataLoader batches prefetched per worker. Only used when num-workers > 0; set <=0 to disable.")
-    parser.add_argument("--shuffle-mode", choices=("global", "block"), default="global",
-        help="Use global random shuffle or block shuffle for disk-backed cache locality.")
+    parser.add_argument("--shuffle-mode", choices=("global", "block", "chunked"), default="chunked",
+        help="Use global random shuffle, block shuffle, or chunked shuffle for disk-backed cache locality.")
     parser.add_argument("--shuffle-block-size", type=int, default=65536,
         help="Number of contiguous samples per shuffled block when --shuffle-mode=block.")
+    parser.add_argument("--shuffle-chunk-size", type=int, default=1024,
+        help="Number of contiguous samples per shuffled chunk when --shuffle-mode=chunked.")
     parser.add_argument("--data-cache-dir", type=Path, default=None)
     parser.add_argument("--rebuild-data-cache", action="store_true")
     amp_group = parser.add_mutually_exclusive_group()
@@ -435,6 +441,30 @@ class BlockShuffleSampler(torch.utils.data.Sampler[int]):
         return self.length
 
 
+class ChunkShuffleSampler(torch.utils.data.Sampler[int]):
+    def __init__(self, length: int, chunk_size: int, seed: int = 0) -> None:
+        if chunk_size <= 0:
+            raise ValueError("chunk_size must be positive")
+        self.length = length
+        self.chunk_size = chunk_size
+        self.seed = seed
+        self.epoch = 0
+
+    def __iter__(self):
+        generator = torch.Generator()
+        generator.manual_seed(self.seed + self.epoch)
+        self.epoch += 1
+        chunks = list(range(0, self.length, self.chunk_size))
+        order = torch.randperm(len(chunks), generator=generator).tolist()
+        for chunk_index in order:
+            start = chunks[chunk_index]
+            end = min(start + self.chunk_size, self.length)
+            yield from range(start, end)
+
+    def __len__(self) -> int:
+        return self.length
+
+
 @dataclass(frozen=True)
 class CheckpointDecision:
     save_best_loss: bool
@@ -475,12 +505,16 @@ def build_loader(
     prefetch_factor: int = 2,
     shuffle_mode: str = "global",
     shuffle_block_size: int = 65536,
+    shuffle_chunk_size: int = 1024,
     seed: int = 0,
 ) -> DataLoader:
     sampler = None
     loader_shuffle = shuffle
     if shuffle and shuffle_mode == "block":
         sampler = BlockShuffleSampler(len(dataset), shuffle_block_size, seed)
+        loader_shuffle = False
+    elif shuffle and shuffle_mode == "chunked":
+        sampler = ChunkShuffleSampler(len(dataset), shuffle_chunk_size, seed)
         loader_shuffle = False
 
     kwargs: dict[str, Any] = {

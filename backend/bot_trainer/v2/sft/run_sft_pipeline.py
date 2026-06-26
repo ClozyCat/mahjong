@@ -90,11 +90,12 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--max-matches", type=int, default=0)
     parser.add_argument("--export-workers", type=int, default=0)
     parser.add_argument("--epochs", type=int, default=20)
-    parser.add_argument("--batch-size", type=int, default=8192)
+    parser.add_argument("--batch-size", type=int, default=4096)
     parser.add_argument("--num-workers", type=int, default=6)
     parser.add_argument("--prefetch-factor", type=int, default=4)
-    parser.add_argument("--shuffle-mode", choices=("global", "block"), default="global")
+    parser.add_argument("--shuffle-mode", choices=("global", "block", "chunked"), default="chunked")
     parser.add_argument("--shuffle-block-size", type=int, default=65536)
+    parser.add_argument("--shuffle-chunk-size", type=int, default=1024)
     parser.add_argument("--profile-batches", type=int, default=0)
     parser.add_argument("--data-cache-dir", default="")
     parser.add_argument("--resume-checkpoint", default="")
@@ -105,8 +106,8 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--early-wall-scale", type=float, default=1.0)
     parser.add_argument("--python-exe", default=sys.executable)
     parser.add_argument("--device", choices=("auto", "cuda", "cpu", "dml"), default="auto")
-    parser.add_argument("--lr", type=float, default=0.00085)
-    parser.add_argument("--lr-min", type=float, default=0.00003)
+    parser.add_argument("--lr", type=float, default=0.000425)
+    parser.add_argument("--lr-min", type=float, default=0.000015)
     parser.add_argument("--weight-decay", type=float, default=0.0001)
     parser.add_argument("--claim-loss-weight", type=float, default=1.0)
     parser.add_argument("--self-kong-loss-weight", type=float, default=1.0)
@@ -358,6 +359,8 @@ def train_model(args: argparse.Namespace, root: Path, env: dict[str, str]) -> No
         args.shuffle_mode,
         "--shuffle-block-size",
         str(args.shuffle_block_size),
+        "--shuffle-chunk-size",
+        str(args.shuffle_chunk_size),
         "--profile-batches",
         str(args.profile_batches),
         "--data-cache-dir",

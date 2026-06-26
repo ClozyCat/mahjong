@@ -11,10 +11,12 @@ from dataset import (
     IGNORE_INDEX,
     SCALAR_FEATURE_COUNT,
     batch_indexer_for_indices,
+    batch_indexers_for_indices,
     decode_jsonl_row,
     encode_row,
     flush_disk_cache_arrays,
     load_metadata,
+    read_indexed_array,
 )
 
 
@@ -150,6 +152,24 @@ def test_batch_indexer_keeps_array_for_non_contiguous_indices() -> None:
     assert indexer.tolist() == [12, 14, 13]
 
 
+def test_batch_indexers_split_multiple_contiguous_runs() -> None:
+    indexers = batch_indexers_for_indices([9, 10, 11, 2, 3, 7])
+
+    assert indexers[0] == slice(9, 12)
+    assert indexers[1] == slice(2, 4)
+    assert isinstance(indexers[2], slice)
+    assert indexers[2] == slice(7, 8)
+
+
+def test_read_indexed_array_preserves_chunked_order() -> None:
+    import numpy as np
+
+    values = np.arange(12)
+    indexers = batch_indexers_for_indices([9, 10, 11, 2, 3, 7])
+
+    assert read_indexed_array(values, indexers).tolist() == [9, 10, 11, 2, 3, 7]
+
+
 def test_sft_pipeline_forwards_auxiliary_training_flags() -> None:
     script_dir = Path(__file__).resolve().parents[1]
     pipeline = (script_dir / "run_sft_pipeline.py").read_text(encoding="utf-8")
@@ -170,13 +190,14 @@ def test_sft_pipeline_forwards_auxiliary_training_flags() -> None:
 
     for flag in required_flags:
         assert flag in pipeline
-    assert 'parser.add_argument("--lr", type=float, default=0.00085)' in pipeline
-    assert 'parser.add_argument("--lr-min", type=float, default=0.00003)' in pipeline
-    assert 'parser.add_argument("--batch-size", type=int, default=8192)' in pipeline
+    assert 'parser.add_argument("--lr", type=float, default=0.000425)' in pipeline
+    assert 'parser.add_argument("--lr-min", type=float, default=0.000015)' in pipeline
+    assert 'parser.add_argument("--batch-size", type=int, default=4096)' in pipeline
     assert 'parser.add_argument("--num-workers", type=int, default=6)' in pipeline
     assert 'parser.add_argument("--prefetch-factor", type=int, default=4)' in pipeline
-    assert 'parser.add_argument("--shuffle-mode", choices=("global", "block"), default="global")' in pipeline
+    assert 'parser.add_argument("--shuffle-mode", choices=("global", "block", "chunked"), default="chunked")' in pipeline
     assert 'parser.add_argument("--shuffle-block-size", type=int, default=65536)' in pipeline
+    assert 'parser.add_argument("--shuffle-chunk-size", type=int, default=1024)' in pipeline
     assert 'parser.add_argument("--profile-batches", type=int, default=0)' in pipeline
     assert 'parser.add_argument("--amp", dest="amp", action="store_true", default=None)' in pipeline
     assert 'parser.add_argument("--no-amp", dest="amp", action="store_false")' in pipeline
@@ -298,6 +319,19 @@ def test_block_shuffle_sampler_changes_order_between_epochs() -> None:
     assert first_epoch != second_epoch
 
 
+def test_chunk_shuffle_sampler_randomizes_chunks_but_keeps_chunk_locality() -> None:
+    from train import ChunkShuffleSampler
+
+    sampler = ChunkShuffleSampler(12, chunk_size=2, seed=7)
+    order = list(iter(sampler))
+
+    assert sorted(order) == list(range(12))
+    assert order != list(range(12))
+    for offset in range(0, len(order), 2):
+        chunk = order[offset : offset + 2]
+        assert chunk == list(range(chunk[0], chunk[0] + len(chunk)))
+
+
 def test_sft_pipeline_forwards_prefetch_factor(monkeypatch: pytest.MonkeyPatch) -> None:
     import argparse
     import run_sft_pipeline
@@ -311,13 +345,14 @@ def test_sft_pipeline_forwards_prefetch_factor(monkeypatch: pytest.MonkeyPatch) 
         python_exe="python",
         data_dir="data",
         epochs=1,
-        batch_size=8192,
+        batch_size=4096,
         checkpoint_dir="checkpoints",
         device="cuda",
         num_workers=6,
         prefetch_factor=4,
-        shuffle_mode="block",
+        shuffle_mode="chunked",
         shuffle_block_size=65536,
+        shuffle_chunk_size=1024,
         profile_batches=0,
         data_cache_dir="cache",
         resume_checkpoint="checkpoint.pt",
@@ -326,8 +361,8 @@ def test_sft_pipeline_forwards_prefetch_factor(monkeypatch: pytest.MonkeyPatch) 
         low_sample_weight_scale=0.75,
         early_wall_threshold=70,
         early_wall_scale=0.8,
-        lr=0.00085,
-        lr_min=0.00003,
+        lr=0.000425,
+        lr_min=0.000015,
         weight_decay=0.0001,
         claim_loss_weight=1.0,
         self_kong_loss_weight=1.0,
@@ -358,11 +393,12 @@ def test_sft_pipeline_forwards_prefetch_factor(monkeypatch: pytest.MonkeyPatch) 
     run_sft_pipeline.train_model(args, Path("."), {})
 
     command = captured[0]
-    assert command[command.index("--batch-size") + 1] == "8192"
+    assert command[command.index("--batch-size") + 1] == "4096"
     assert command[command.index("--num-workers") + 1] == "6"
     assert command[command.index("--prefetch-factor") + 1] == "4"
-    assert command[command.index("--shuffle-mode") + 1] == "global"
+    assert command[command.index("--shuffle-mode") + 1] == "chunked"
     assert command[command.index("--shuffle-block-size") + 1] == "65536"
+    assert command[command.index("--shuffle-chunk-size") + 1] == "1024"
     assert command[command.index("--profile-batches") + 1] == "0"
     assert command[command.index("--resume-checkpoint") + 1] == "checkpoint.pt"
     assert command[command.index("--fine-tune-preset") + 1] == "low-aux"
@@ -370,6 +406,8 @@ def test_sft_pipeline_forwards_prefetch_factor(monkeypatch: pytest.MonkeyPatch) 
     assert command[command.index("--low-sample-weight-scale") + 1] == "0.75"
     assert command[command.index("--early-wall-threshold") + 1] == "70"
     assert command[command.index("--early-wall-scale") + 1] == "0.8"
+    assert command[command.index("--lr") + 1] == "0.000425"
+    assert command[command.index("--lr-min") + 1] == "1.5e-05"
     assert "--compile" not in command
 
 

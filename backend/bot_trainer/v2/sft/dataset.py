@@ -164,9 +164,10 @@ class MahjongDecisionDataset(Dataset):
 
     def get_batch(self, indices: Sequence[int]) -> dict[str, torch.Tensor]:
         # 每个 batch 只从磁盘映射缓存读取当前索引，避免整份数据常驻内存。
-        indexer = batch_indexer_for_indices(indices)
+        # chunked shuffle 会生成多个连续片段；分片读取比一次 fancy indexing 更友好。
+        indexers = batch_indexers_for_indices(indices)
         batch = {
-            name: torch.from_numpy(np.asarray(mmap_array[indexer]).copy())
+            name: torch.from_numpy(read_indexed_array(mmap_array, indexers))
             for name, mmap_array in self._arrays.items()
         }
         return batch
@@ -272,6 +273,32 @@ def batch_indexer_for_indices(indices: Sequence[int]) -> slice | np.ndarray:
         start = int(index_array[0])
         return slice(start, start + int(index_array.size))
     return index_array
+
+
+def batch_indexers_for_indices(indices: Sequence[int]) -> list[slice | np.ndarray]:
+    index_array = np.asarray(list(indices), dtype=np.int64)
+    if index_array.size == 0:
+        return [index_array]
+    indexers: list[slice | np.ndarray] = []
+    run_start = 0
+    for position in range(1, int(index_array.size)):
+        if index_array[position] != index_array[position - 1] + 1:
+            indexers.append(batch_indexer_for_indices(index_array[run_start:position]))
+            run_start = position
+    indexers.append(batch_indexer_for_indices(index_array[run_start:]))
+    return indexers
+
+
+def read_indexed_array(
+    mmap_array: np.ndarray,
+    indexers: Sequence[slice | np.ndarray],
+) -> np.ndarray:
+    if len(indexers) == 1:
+        return np.asarray(mmap_array[indexers[0]]).copy()
+    return np.concatenate(
+        [np.asarray(mmap_array[indexer]) for indexer in indexers],
+        axis=0,
+    ).copy()
 
 
 def decode_jsonl_row(line: str, jsonl_path: Path, line_number: int) -> tuple[dict[str, Any], bool]:
