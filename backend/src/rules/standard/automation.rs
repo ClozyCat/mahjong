@@ -6,7 +6,7 @@ use serde_json::Value;
 use crate::bot::policy::BotPolicyConfig;
 use crate::bot::{self, BotAction};
 use crate::core::engine::try_handle_player_action_in_room_state;
-use crate::core::state::{PendingAction, RoomState};
+use crate::core::state::{PendingAction, RoomState, pending_action_response_seat};
 use crate::projection::bot_view::{BotClaimOption, build_bot_context_view};
 use crate::room_scoring::RoomScoringCache;
 
@@ -33,7 +33,6 @@ use super::win::{
     hu_meets_bot_minimum_fan_for_state,
 };
 
-const MAX_SEATS: usize = 4;
 type BotPolicyResolver<'a> = &'a dyn Fn(usize) -> BotPolicyConfig;
 
 pub fn next_bot_action_in_room_state(room: &RoomState) -> Result<Option<BotAction>, String> {
@@ -63,11 +62,12 @@ pub fn try_process_due_timeout_in_room_state(
     };
 
     // 检查当前超时座位是否有额外思考时间
-    let timeout_seat = match pending_timeout.kind.as_str() {
+    let fallback_timeout_seat = match pending_timeout.kind.as_str() {
         "active_turn" => round.current_actor,
         "claim_window" => pending_timeout.seat_index,
         _ => return Ok(None),
     };
+    let timeout_seat = pending_timeout_extra_time_seat(room).unwrap_or(fallback_timeout_seat);
     if !seat_is_bot(room, timeout_seat) {
         if let Some(match_state) = room.match_state.as_mut() {
             let extra = match_state
@@ -610,7 +610,8 @@ fn next_bot_action_for_state_with_policy_resolver(
         "claim_window" => match round.pending_action.as_ref()? {
             PendingAction::RobKongWindow(rob) => {
                 let seat_index =
-                    next_rob_kong_responder_seat(rob).filter(|seat| seat_is_bot(state, *seat))?;
+                    pending_action_response_seat(&PendingAction::RobKongWindow(rob.clone()))
+                        .filter(|seat| seat_is_bot(state, *seat))?;
                 let policy_config = policy_for_seat(seat_index);
                 if !hu_meets_bot_minimum_fan_for_state(state, seat_index, "discard") {
                     return Some(BotAction {
@@ -650,8 +651,9 @@ fn next_bot_action_for_state_with_policy_resolver(
             }
             PendingAction::ClaimWindow(claim) => {
                 let cache = RoomScoringCache::from_state(state);
-                let seat_index = next_claim_window_responder_seat(claim)
-                    .filter(|seat| seat_is_bot(state, *seat))?;
+                let seat_index =
+                    pending_action_response_seat(&PendingAction::ClaimWindow(claim.clone()))
+                        .filter(|seat| seat_is_bot(state, *seat))?;
                 let policy_config = policy_for_seat(seat_index);
                 choose_bot_claim_action_with_cache_for_state(
                     state,
@@ -661,6 +663,19 @@ fn next_bot_action_for_state_with_policy_resolver(
                 )
             }
         },
+        _ => None,
+    }
+}
+
+fn pending_timeout_extra_time_seat(room: &RoomState) -> Option<usize> {
+    let pending_timeout = room.pending_timeout.as_ref()?;
+    match pending_timeout.kind.as_str() {
+        "active_turn" => room.round_state.as_ref().map(|round| round.current_actor),
+        "claim_window" => room
+            .round_state
+            .as_ref()
+            .and_then(|round| round.pending_action.as_ref())
+            .and_then(pending_action_response_seat),
         _ => None,
     }
 }
@@ -698,31 +713,7 @@ fn resolve_claim_timeout_in_room_state(room: &mut RoomState) -> Result<Option<Ve
 }
 
 fn pending_timeout_pass_seat(pending_action: &PendingAction) -> Option<usize> {
-    match pending_action {
-        PendingAction::ClaimWindow(claim) => next_claim_window_responder_seat(claim),
-        PendingAction::RobKongWindow(rob) => next_rob_kong_responder_seat(rob),
-    }
-}
-
-fn next_claim_window_responder_seat(
-    claim: &crate::core::state::ClaimWindowAction,
-) -> Option<usize> {
-    response_order_from(claim.discarder_seat).find(|seat| {
-        claim
-            .claim_window
-            .get(*seat)
-            .is_some_and(|claims| !claims.is_empty())
-            && !claim.responded_seats.contains(seat)
-    })
-}
-
-fn next_rob_kong_responder_seat(rob: &crate::core::state::RobKongWindowAction) -> Option<usize> {
-    response_order_from(rob.actor_seat)
-        .find(|seat| rob.offered_hu_seats.contains(seat) && !rob.responded_seats.contains(seat))
-}
-
-fn response_order_from(origin_seat: usize) -> impl Iterator<Item = usize> {
-    (1..MAX_SEATS).map(move |offset| (origin_seat + offset) % MAX_SEATS)
+    pending_action_response_seat(pending_action)
 }
 
 fn extract_emitted_messages(
@@ -998,6 +989,27 @@ mod tests {
             }
         }))
         .expect("room should parse")
+    }
+
+    #[test]
+    fn claim_window_timeout_extends_current_responder_extra_time() {
+        let mut room = claim_window_priority_room_state();
+        {
+            let match_state = room.match_state.as_mut().expect("match should exist");
+            match_state.extra_time_pool.insert(3, 90);
+            match_state.extra_time_pool.insert(0, 12);
+        }
+
+        let result =
+            try_process_due_timeout_in_room_state(&mut room).expect("claim timeout should work");
+
+        assert_eq!(result, Some(Vec::new()));
+        let match_state = room.match_state.as_ref().expect("match should exist");
+        assert_eq!(match_state.extra_time_pool.get(&3), Some(&90));
+        assert_eq!(match_state.extra_time_pool.get(&0), Some(&0));
+        let pending_timeout = room.pending_timeout.as_ref().expect("timeout should exist");
+        assert!(pending_timeout.extended_with_extra);
+        assert_eq!(pending_timeout.seat_index, 3);
     }
 
     fn rob_kong_low_fan_room_state() -> RoomState {

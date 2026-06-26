@@ -7,7 +7,7 @@ use serde_json::{Value, json};
 use crate::core::ids::Seat;
 use crate::core::state::{
     DisplayMeldOrientation, DisplayMeldState, DisplayMeldTileState, MatchState, PendingAction,
-    RoomState, RoundState, SettlementKongScoreDetailEntry,
+    RoomState, RoundState, SettlementKongScoreDetailEntry, pending_action_response_seat,
 };
 use crate::projection::SeatProjectionSupport;
 use crate::projection::hand_insight::{HandInsightsView, build_hand_insights_view};
@@ -218,10 +218,11 @@ pub fn build_pending_action_view(
         .find(|player| player.seat == local_seat);
     let is_local_ready_hand = local_player.is_some_and(|player| player.is_ready_hand);
 
+    let extra_time_seat = pending_timeout_extra_time_seat(state);
     let remaining_extra_time = state
         .match_state
         .as_ref()
-        .and_then(|ms| ms.extra_time_pool.get(&pending_timeout.seat_index).copied());
+        .and_then(|ms| ms.extra_time_pool.get(&extra_time_seat).copied());
 
     match pending_timeout.kind.as_str() {
         "active_turn" => {
@@ -330,6 +331,25 @@ pub fn build_pending_action_view(
             ))
         }
         _ => None,
+    }
+}
+
+fn pending_timeout_extra_time_seat(state: &RoomState) -> Seat {
+    let Some(pending_timeout) = state.pending_timeout.as_ref() else {
+        return 0;
+    };
+    match pending_timeout.kind.as_str() {
+        "active_turn" => state
+            .round_state
+            .as_ref()
+            .map_or(pending_timeout.seat_index, |round| round.current_actor),
+        "claim_window" => state
+            .round_state
+            .as_ref()
+            .and_then(|round| round.pending_action.as_ref())
+            .and_then(pending_action_response_seat)
+            .unwrap_or(pending_timeout.seat_index),
+        _ => pending_timeout.seat_index,
     }
 }
 
@@ -1058,6 +1078,69 @@ mod tests {
         assert_eq!(
             snapshot["payload"]["private_state"]["pending_action"]["options"],
             serde_json::json!(["kong", "hu", "pass"])
+        );
+    }
+
+    #[test]
+    fn claim_window_projection_uses_current_responder_extra_time() {
+        let mut match_state = MatchState {
+            seed: 0,
+            prevailing_wind: "east".to_string(),
+            hand_number: 1,
+            dealer_seat: 0,
+            dealer_repeat_count: 0,
+            cumulative_scores: Default::default(),
+            match_finished: false,
+            last_completed_round_id: None,
+            statistics: Default::default(),
+            extra_time_pool: Default::default(),
+        };
+        match_state.extra_time_pool.insert(1, 90);
+        match_state.extra_time_pool.insert(0, 17);
+
+        let state = RoomState {
+            table_code: "ROOM42".to_string(),
+            phase: "playing".to_string(),
+            mode: "normal".to_string(),
+            owner_user_id: None,
+            multiplier: 1,
+            minimum_hu_fan: crate::core::state::room::default_minimum_hu_fan(),
+            dealer_repeat_enabled: false,
+            dealer_double_enabled: false,
+            ready_hand_enabled: true,
+            seats: seats(),
+            match_state: Some(match_state),
+            round_state: Some(RoundState {
+                round_id: "round-1".to_string(),
+                dealer_seat: 0,
+                round_wind: "east".to_string(),
+                current_actor: 1,
+                phase: "playing".to_string(),
+                players: players(),
+                last_discard: Some(suit_tile("w3", "w3#discard")),
+                pending_action: Some(PendingAction::ClaimWindow(ClaimWindowAction {
+                    discarder_seat: 1,
+                    claim_window: vec![vec!["chow".to_string()], vec![], vec![], vec![]],
+                    responded_seats: vec![],
+                    claim_responses: vec![],
+                })),
+                ..Default::default()
+            }),
+            pending_timeout: Some(PendingTimeout {
+                kind: "claim_window".to_string(),
+                seat_index: 1,
+                deadline_at: Some("2026-04-20T12:00:30.000Z".to_string()),
+                drawn_tile_id: None,
+                extended_with_extra: false,
+            }),
+            continue_action: None,
+        };
+
+        let snapshot = room_snapshot_message(&state, 0, &SeatProjectionSupport::default());
+
+        assert_eq!(
+            snapshot["payload"]["private_state"]["pending_action"]["remaining_extra_time"],
+            serde_json::json!(17)
         );
     }
 

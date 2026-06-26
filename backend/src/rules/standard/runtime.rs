@@ -2,7 +2,7 @@ use chrono::{SecondsFormat, Utc};
 use serde_json::{Value, json};
 
 use crate::core::engine::planner::compute_pending_timeout_value;
-use crate::core::state::RoomState;
+use crate::core::state::{RoomState, pending_action_response_seat};
 use crate::core::tile::Tile;
 
 const PENDING_TIMEOUT_SECONDS: i64 = 15;
@@ -32,11 +32,11 @@ fn refund_unused_extra_time(room: &mut RoomState) {
             Ok(dt) => dt.into(),
             Err(_) => return,
         };
+    let seat = pending_timeout_extra_time_seat(room).unwrap_or(pending_timeout.seat_index);
     let match_state = match room.match_state.as_mut() {
         Some(s) => s,
         None => return,
     };
-    let seat = pending_timeout.seat_index;
 
     let now = Utc::now();
     if deadline > now {
@@ -45,6 +45,19 @@ fn refund_unused_extra_time(room: &mut RoomState) {
         if pending_timeout.extended_with_extra {
             *match_state.extra_time_pool.entry(seat).or_insert(0) += remaining;
         }
+    }
+}
+
+fn pending_timeout_extra_time_seat(room: &RoomState) -> Option<usize> {
+    let pending_timeout = room.pending_timeout.as_ref()?;
+    match pending_timeout.kind.as_str() {
+        "active_turn" => room.round_state.as_ref().map(|round| round.current_actor),
+        "claim_window" => room
+            .round_state
+            .as_ref()
+            .and_then(|round| round.pending_action.as_ref())
+            .and_then(pending_action_response_seat),
+        _ => None,
     }
 }
 
@@ -239,5 +252,77 @@ mod tests {
             .map(|value| value.with_timezone(&Utc))
             .expect("sync should set a timeout deadline");
         assert!(deadline > Utc::now());
+    }
+
+    #[test]
+    fn claim_window_refunds_unused_extra_time_to_current_responder() {
+        let future_deadline = (Utc::now() + chrono::TimeDelta::seconds(30))
+            .to_rfc3339_opts(chrono::SecondsFormat::Millis, true);
+        let mut room = RoomState::from_room_value(&json!({
+            "table_code": "ROOM42",
+            "phase": "playing",
+            "mode": "normal",
+            "test_mode": false,
+            "enforce_minimum_eight_fan": true,
+            "seats": [],
+            "match_state": {
+                "prevailing_wind": "east",
+                "hand_number": 1,
+                "dealer_seat": 0,
+                "cumulative_scores": {"0": 0, "1": 0, "2": 0, "3": 0},
+                "match_finished": false,
+                "last_completed_round_id": null,
+                "extra_time_pool": {"0": 0, "1": 0, "2": 0, "3": 0}
+            },
+            "round_state": {
+                "round_id": "round-1",
+                "dealer_seat": 0,
+                "current_actor": 1,
+                "wall": {"tiles": [], "head_index": 0, "tail_index": 0},
+                "players": [],
+                "last_discard": null,
+                "pending_action": {
+                    "type": "claim_window",
+                    "discarder_seat": 1,
+                    "claim_window": [["chow"], [], [], []],
+                    "responded_seats": [],
+                    "claim_responses": []
+                },
+                "phase": "playing",
+                "settlement": null,
+                "version": 1,
+                "score_trackers": {"kong_entries": []},
+                "last_action_context": {
+                    "kind": "discard",
+                    "seat": 1,
+                    "tile_id": "w3#discard",
+                    "from_kong_replacement": false,
+                    "was_last_live_tile": false,
+                    "was_last_discard": false
+                },
+                "round_wind": "east",
+                "enforce_minimum_eight_fan": true,
+                "restricted_discard_tile_key": null
+            },
+            "pending_timeout": {
+                "kind": "claim_window",
+                "seat_index": 1,
+                "deadline_at": future_deadline,
+                "drawn_tile_id": null,
+                "extended_with_extra": true
+            },
+            "continue_action": null
+        }))
+        .expect("room should parse");
+
+        sync_pending_timeout_in_room_state(&mut room);
+
+        let extra_time_pool = &room
+            .match_state
+            .as_ref()
+            .expect("match should exist")
+            .extra_time_pool;
+        assert_eq!(extra_time_pool.get(&1), Some(&0));
+        assert!(extra_time_pool.get(&0).copied().unwrap_or(0) > 0);
     }
 }

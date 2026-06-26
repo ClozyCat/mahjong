@@ -419,6 +419,7 @@ fn rotate_match_scores_after_wind_end(room: &mut RoomState, old_to_new_seat: &[u
         &mut match_state.statistics.seat_stats_by_seat,
         old_to_new_seat,
     );
+    remap_seat_keyed_map(&mut match_state.extra_time_pool, old_to_new_seat);
     match_state.sync_statistics_to_cumulative_scores();
 }
 
@@ -1363,6 +1364,22 @@ mod tests {
                     stats.deal_in_count
                 )),
             Some((vec![0, 10], 1, 0))
+        );
+    }
+
+    #[test]
+    fn wind_end_rotation_moves_extra_time_with_players() {
+        let mut room = settlement_room_at_wind_end("east");
+        let match_state = room.match_state.as_mut().expect("match should exist");
+        match_state.extra_time_pool = BTreeMap::from([(0, 11), (1, 22), (2, 33), (3, 44)]);
+
+        complete_start_next_round_in_room_state(&mut room).expect("next wind should start");
+
+        assert_eq!(nicknames_by_seat(&room), vec!["P1", "P0", "P3", "P2"]);
+        let match_state = room.match_state.as_ref().expect("match should exist");
+        assert_eq!(
+            match_state.extra_time_pool,
+            BTreeMap::from([(0, 22), (1, 11), (2, 44), (3, 33)])
         );
     }
 

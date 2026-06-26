@@ -116,6 +116,32 @@ impl PendingAction {
     }
 }
 
+pub fn pending_action_response_seat(pending_action: &PendingAction) -> Option<Seat> {
+    match pending_action {
+        PendingAction::ClaimWindow(claim) => next_claim_window_responder_seat(claim),
+        PendingAction::RobKongWindow(rob) => next_rob_kong_responder_seat(rob),
+    }
+}
+
+fn next_claim_window_responder_seat(claim: &ClaimWindowAction) -> Option<Seat> {
+    response_order_from(claim.discarder_seat).find(|seat| {
+        claim
+            .claim_window
+            .get(*seat)
+            .is_some_and(|claims| !claims.is_empty())
+            && !claim.responded_seats.contains(seat)
+    })
+}
+
+fn next_rob_kong_responder_seat(rob: &RobKongWindowAction) -> Option<Seat> {
+    response_order_from(rob.actor_seat)
+        .find(|seat| rob.offered_hu_seats.contains(seat) && !rob.responded_seats.contains(seat))
+}
+
+fn response_order_from(origin_seat: Seat) -> impl Iterator<Item = Seat> {
+    (1..4).map(move |offset| (origin_seat + offset) % 4)
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Default)]
 #[serde(default)]
 pub struct ClaimWindowAction {
