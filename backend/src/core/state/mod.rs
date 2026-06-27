@@ -25,6 +25,8 @@ pub use settlement::{
 };
 pub use wall::WallState;
 
+use std::collections::BTreeMap;
+
 use serde::Deserialize;
 use serde_json::Value;
 
@@ -87,6 +89,28 @@ pub(crate) fn seat_vec(value: Option<&Value>) -> Vec<Seat> {
                 .collect()
         })
         .unwrap_or_default()
+}
+
+pub(crate) fn seat_i64_map(value: Option<&Value>) -> BTreeMap<Seat, i64> {
+    value
+        .and_then(Value::as_object)
+        .map(|object| {
+            object
+                .iter()
+                .filter_map(|(seat, value)| seat.parse::<Seat>().ok().zip(value.as_i64()))
+                .collect()
+        })
+        .unwrap_or_default()
+}
+
+pub(crate) fn deserialize_seat_i64_map<'de, D>(
+    deserializer: D,
+) -> Result<BTreeMap<Seat, i64>, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    let value = Option::<Value>::deserialize(deserializer)?;
+    Ok(seat_i64_map(value.as_ref()))
 }
 
 pub(crate) fn null_default<'de, D, T>(deserializer: D) -> Result<T, D::Error>

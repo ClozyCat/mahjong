@@ -107,6 +107,45 @@ impl KongTrackerEntry {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Default)]
 #[serde(default)]
 pub struct RuleRuntimeState {
-    #[serde(default)]
+    #[serde(default, deserialize_with = "super::deserialize_seat_i64_map")]
     pub player_multipliers: BTreeMap<Seat, i64>,
+}
+
+#[cfg(test)]
+mod tests {
+    use serde_json::json;
+
+    use super::RoundState;
+    use crate::core::state::{PendingAction, RoundState as _};
+
+    #[test]
+    fn parses_player_multiplier_maps_with_json_object_seat_keys() {
+        let round = RoundState::from_value(&json!({
+            "round_id": "round-1",
+            "dealer_seat": 0,
+            "round_wind": "east",
+            "current_actor": 0,
+            "phase": "playing",
+            "player_multipliers": {
+                "0": 3,
+                "1": 2
+            },
+            "pending_action": {
+                "type": "player_multiplier_selection",
+                "responded_seats": [0],
+                "selected_multipliers": {
+                    "0": 3
+                }
+            }
+        }))
+        .expect("round state should parse string-keyed multiplier maps");
+
+        assert_eq!(round.rule_state.player_multipliers.get(&0), Some(&3));
+        assert_eq!(round.rule_state.player_multipliers.get(&1), Some(&2));
+
+        let Some(PendingAction::PlayerMultiplierSelection(selection)) = round.pending_action else {
+            panic!("expected player multiplier selection pending action");
+        };
+        assert_eq!(selection.selected_multipliers.get(&0), Some(&3));
+    }
 }

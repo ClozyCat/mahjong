@@ -172,6 +172,7 @@ pub struct RobKongWindowAction {
 #[serde(default)]
 pub struct PlayerMultiplierSelectionAction {
     pub responded_seats: Vec<Seat>,
+    #[serde(default, deserialize_with = "super::deserialize_seat_i64_map")]
     pub selected_multipliers: BTreeMap<Seat, i64>,
 }
 
