@@ -9,13 +9,16 @@ import {
 
 const seats = [
   { seat_index: 0, user_id: 10, nickname: '小A', points: 550, title: 'Lv.11', connected: true },
-  { seat_index: 1, user_id: 11, nickname: '小B', points: -20, title: 'Lv.0', connected: true },
+  { seat_index: 1, user_id: 11, nickname: '小B', points: -20, title: 'Lv.-1', connected: true },
   { seat_index: 2, user_id: 12, nickname: '小C', points: 1350, title: 'Lv.27', connected: true },
 ];
 
 describe('system broadcast copy', () => {
   it('maps player titles with 50-point lower-inclusive bands and no upper cap', () => {
-    expect(titleForPoints(-1000)).toBe('Lv.0');
+    expect(titleForPoints(-1000)).toBe('Lv.-20');
+    expect(titleForPoints(-51)).toBe('Lv.-2');
+    expect(titleForPoints(-50)).toBe('Lv.-1');
+    expect(titleForPoints(-1)).toBe('Lv.-1');
     expect(titleForPoints(0)).toBe('Lv.0');
     expect(titleForPoints(49)).toBe('Lv.0');
     expect(titleForPoints(50)).toBe('Lv.1');
@@ -91,6 +94,21 @@ describe('system broadcast copy', () => {
     });
 
     expect(copy).toBe('👇小B已由“Lv.11”陨落为“Lv.10”💩');
+  });
+
+  it('announces title demotions into negative levels', () => {
+    const copy = createTitleChangeSystemBroadcast({
+      user_id: 11,
+      display_name: '小B',
+      delta: -51,
+      old_points: 0,
+      points: -51,
+      reason: 'round_settlement',
+      source_table_code: 'ROOM1',
+      source_round_id: 'east-1',
+    });
+
+    expect(copy).toBe('👇小B已由“Lv.0”陨落为“Lv.-2”💩');
   });
 
   it('only creates system broadcasts for title changes', () => {

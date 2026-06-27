@@ -778,7 +778,7 @@ describe('TableStage', () => {
     };
     const players = [
       { seat: 'bottom' as const, name: '小A', title: 'Lv.11', points: 550, melds: [] },
-      { seat: 'right' as const, name: '小B', title: 'Lv.0', points: -20, melds: [] },
+      { seat: 'right' as const, name: '小B', title: 'Lv.-1', points: -20, melds: [] },
     ];
 
     const { container, rerender } = render(

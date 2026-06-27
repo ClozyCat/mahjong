@@ -20,11 +20,7 @@ pub(crate) struct PublicUserView {
 }
 
 pub(crate) fn title_for_points(points: i64) -> String {
-    if points <= 0 {
-        return "Lv.0".to_string();
-    }
-
-    format!("Lv.{}", points / POINTS_PER_LEVEL)
+    format!("Lv.{}", points.div_euclid(POINTS_PER_LEVEL))
 }
 
 pub(crate) fn title_description_for_points(points: i64) -> String {
@@ -71,7 +67,10 @@ mod tests {
 
     #[test]
     fn user_title_thresholds_are_lower_inclusive_upper_exclusive() {
-        assert_eq!(title_for_points(-1_000), "Lv.0");
+        assert_eq!(title_for_points(-1_000), "Lv.-20");
+        assert_eq!(title_for_points(-51), "Lv.-2");
+        assert_eq!(title_for_points(-50), "Lv.-1");
+        assert_eq!(title_for_points(-1), "Lv.-1");
         assert_eq!(title_for_points(0), "Lv.0");
         assert_eq!(title_for_points(1), "Lv.0");
         assert_eq!(title_for_points(49), "Lv.0");
