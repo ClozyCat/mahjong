@@ -51,6 +51,83 @@ use crate::core::state::ClaimWindowAction;
 
 const MAX_SEATS: usize = 4;
 
+pub fn apply_player_multiplier_selection_in_room_state(
+    room: &mut RoomState,
+    seat_index: usize,
+    multiplier: i64,
+) -> Result<EngineOutput, String> {
+    if !(1..=3).contains(&multiplier) {
+        return Err("invalid_action".to_string());
+    }
+    let round = round_state_mut(room)?;
+    let PendingAction::PlayerMultiplierSelection(selection) =
+        round.pending_action.as_mut().ok_or_else(|| "invalid_action".to_string())?
+    else {
+        return Err("invalid_action".to_string());
+    };
+    if seat_index >= round.players.len() || selection.responded_seats.contains(&seat_index) {
+        return Err("invalid_action".to_string());
+    }
+
+    selection.responded_seats.push(seat_index);
+    selection.responded_seats.sort();
+    selection.responded_seats.dedup();
+    selection.selected_multipliers.insert(seat_index, multiplier);
+    round
+        .rule_state
+        .player_multipliers
+        .insert(seat_index, multiplier);
+    let all_selected = selection.responded_seats.len() >= round.players.len();
+    round.version += 1;
+
+    let message = player_multiplier_selected_message(seat_index, multiplier);
+    if all_selected {
+        round.pending_action = None;
+        sync_pending_timeout_in_room_state(room);
+    }
+
+    Ok(EngineOutput::new(Vec::new(), vec![message]))
+}
+
+pub(crate) fn complete_player_multiplier_selection_timeout_in_room_state(
+    room: &mut RoomState,
+) -> Result<Vec<Value>, String> {
+    let Some(round) = room.round_state.as_mut() else {
+        return Ok(Vec::new());
+    };
+    let Some(PendingAction::PlayerMultiplierSelection(selection)) = round.pending_action.as_mut()
+    else {
+        return Ok(Vec::new());
+    };
+    let mut messages = Vec::new();
+    for seat in 0..round.players.len() {
+        let multiplier = selection.selected_multipliers.get(&seat).copied().unwrap_or(1);
+        round.rule_state.player_multipliers.insert(seat, multiplier);
+        if !selection.responded_seats.contains(&seat) {
+            selection.responded_seats.push(seat);
+            selection.selected_multipliers.insert(seat, multiplier);
+            messages.push(player_multiplier_selected_message(seat, multiplier));
+        }
+    }
+    selection.responded_seats.sort();
+    selection.responded_seats.dedup();
+    round.pending_action = None;
+    round.version += 1;
+    sync_pending_timeout_in_room_state(room);
+    Ok(messages)
+}
+
+fn player_multiplier_selected_message(seat_index: usize, multiplier: i64) -> Value {
+    round_event_message(
+        "player_multiplier_selected",
+        json!({
+            "type": "player_multiplier_selected",
+            "seat": seat_index,
+            "multiplier": multiplier,
+        }),
+    )
+}
+
 #[cfg(test)]
 fn apply_room_state_side_effect<F>(room: &mut Value, effect: F)
 where
@@ -2463,6 +2540,7 @@ mod tests {
             minimum_hu_fan: crate::core::state::room::default_minimum_hu_fan(),
             dealer_repeat_enabled: false,
             dealer_double_enabled: false,
+            player_multiplier_selection_enabled: false,
             ready_hand_enabled: true,
             seats: (0..4).map(seat_state).collect(),
             match_state: None,
@@ -2537,7 +2615,7 @@ mod tests {
                     was_last_live_tile: false,
                     was_last_discard: false,
                 },
-                rule_state: RuleRuntimeState {},
+                rule_state: RuleRuntimeState::default(),
                 restricted_discard_tile_key: None,
             }),
             pending_timeout: Some(PendingTimeout {

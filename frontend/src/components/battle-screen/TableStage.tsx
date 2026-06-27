@@ -106,8 +106,10 @@ interface TableStageProps {
   canIncreaseMinimumHuFan?: boolean;
   dealerRepeatEnabled?: boolean;
   dealerDoubleEnabled?: boolean;
+  playerMultiplierSelectionEnabled?: boolean;
   canToggleDealerRepeat?: boolean;
   canToggleDealerDouble?: boolean;
+  canTogglePlayerMultiplierSelection?: boolean;
   canLeaveTable?: boolean;
   themeId?: ThemeId;
   themeLabel?: string;
@@ -120,6 +122,7 @@ interface TableStageProps {
   onMinimumHuFanChange?: (minimumHuFan: MinimumHuFan) => void;
   onDealerRepeatChange?: (enabled: boolean) => void;
   onDealerDoubleChange?: (enabled: boolean) => void;
+  onPlayerMultiplierSelectionChange?: (enabled: boolean) => void;
   onQuickChat?: (targetSeat: number, emoji: QuickChatEmoji) => void;
   onPointGesture?: (targetSeat: number) => void;
   isBgmEnabled?: boolean;
@@ -173,8 +176,10 @@ export function TableStage({
   canIncreaseMinimumHuFan = false,
   dealerRepeatEnabled = false,
   dealerDoubleEnabled = false,
+  playerMultiplierSelectionEnabled = false,
   canToggleDealerRepeat = false,
   canToggleDealerDouble = false,
+  canTogglePlayerMultiplierSelection = false,
   canLeaveTable = false,
   themeId = 'tian-shui-bi',
   themeLabel = '天水碧',
@@ -187,6 +192,7 @@ export function TableStage({
   onMinimumHuFanChange,
   onDealerRepeatChange,
   onDealerDoubleChange,
+  onPlayerMultiplierSelectionChange,
   onQuickChat,
   onPointGesture,
   isBgmEnabled = false,
@@ -277,8 +283,10 @@ export function TableStage({
             canIncreaseMinimumHuFan={canIncreaseMinimumHuFan}
             dealerRepeatEnabled={dealerRepeatEnabled}
             dealerDoubleEnabled={dealerDoubleEnabled}
+            playerMultiplierSelectionEnabled={playerMultiplierSelectionEnabled}
             canToggleDealerRepeat={canToggleDealerRepeat}
             canToggleDealerDouble={canToggleDealerDouble}
+            canTogglePlayerMultiplierSelection={canTogglePlayerMultiplierSelection}
             canLeaveTable={canLeaveTable}
             onLeaveTable={onLeaveTable}
             onOpenInviteDialog={onOpenInviteDialog}
@@ -289,6 +297,7 @@ export function TableStage({
             onMinimumHuFanChange={onMinimumHuFanChange}
             onDealerRepeatChange={onDealerRepeatChange}
             onDealerDoubleChange={onDealerDoubleChange}
+            onPlayerMultiplierSelectionChange={onPlayerMultiplierSelectionChange}
             isBgmEnabled={isBgmEnabled}
             onToggleBgm={onToggleBgm}
             isVoiceEnabled={isVoiceEnabled}

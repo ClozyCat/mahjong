@@ -32,6 +32,7 @@ const ACTION_CALLOUT_COPY = {
   kong: '杠',
   hu: '和',
   ready_hand: '听',
+  multiplier: '×1',
 } as const;
 
 const ACTION_CALLOUT_LINGER_MS = SETTLEMENT_CALLOUT_LINGER_MS;
@@ -42,7 +43,7 @@ type ActionCallout = {
   key: string;
   seat: Seat;
   tone: keyof typeof ACTION_CALLOUT_COPY;
-  label: (typeof ACTION_CALLOUT_COPY)[keyof typeof ACTION_CALLOUT_COPY];
+  label: string;
   huVariant: 'discard' | 'self-draw' | null;
 };
 
@@ -106,7 +107,10 @@ function createActionCallout(
     key: actionEffect.key,
     seat,
     tone: actionEffect.calloutTone,
-    label: ACTION_CALLOUT_COPY[actionEffect.calloutTone],
+    label:
+      actionEffect.calloutTone === 'multiplier'
+        ? actionEffect.label
+        : ACTION_CALLOUT_COPY[actionEffect.calloutTone],
     huVariant:
       actionEffect.calloutTone === 'hu'
         ? getHuCalloutVariant(settlementWinType, settlementWinTypeLabel)

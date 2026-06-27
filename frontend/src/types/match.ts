@@ -16,7 +16,18 @@ export type RoomPhase = 'waiting' | 'playing' | 'settlement' | 'finished';
 
 export type ConnectionStatus = 'idle' | 'connecting' | 'connected' | 'reconnecting' | 'closed' | 'error';
 
-export type BackendActionType = 'discard' | 'ready_hand' | 'flower' | 'kong' | 'hu' | 'chow' | 'pung' | 'pass';
+export type BackendActionType =
+  | 'discard'
+  | 'ready_hand'
+  | 'flower'
+  | 'kong'
+  | 'hu'
+  | 'chow'
+  | 'pung'
+  | 'pass'
+  | 'multiplier_1'
+  | 'multiplier_2'
+  | 'multiplier_3';
 export type PromptActionType = BackendActionType;
 export type ActionRequestType = BackendActionType;
 export type ClaimActionId = Extract<BackendActionType, 'kong' | 'chow' | 'pung'>;
@@ -175,6 +186,7 @@ export interface PrivatePlayerState {
   display_melds?: DisplayMeldView[];
   flowers: string[];
   discards: string[];
+  selected_multiplier?: number;
 }
 
 export type PendingAction =
@@ -207,6 +219,14 @@ export type PendingAction =
       remaining_extra_time?: number;
       extended_with_extra?: boolean;
     }
+  | {
+      type: 'player_multiplier_selection';
+      deadline_at: string;
+      responded_seats: number[];
+      selected_multipliers: Record<string, number>;
+      options: PromptActionType[];
+      extended_with_extra?: boolean;
+    }
   | Record<string, unknown>;
 
 export interface PrivateState {
@@ -232,6 +252,8 @@ export interface RoomSnapshotPayload {
   minimum_hu_fan?: MinimumHuFan;
   dealer_repeat_enabled?: boolean;
   dealer_double_enabled?: boolean;
+  player_multiplier_selection_enabled?: boolean;
+  ready_hand_enabled?: boolean;
   seats: SeatSnapshot[];
   local_seat?: number | null;
   match_state?: MatchState | null;
@@ -434,6 +456,7 @@ export type ClientMessage =
   | { type: 'set_minimum_hu_fan'; payload: { minimum_hu_fan: MinimumHuFan } }
   | { type: 'set_dealer_repeat'; payload: { enabled: boolean } }
   | { type: 'set_dealer_double'; payload: { enabled: boolean } }
+  | { type: 'set_player_multiplier_selection'; payload: { enabled: boolean } }
   | { type: 'set_bot_takeover'; payload: { enabled: boolean } }
   | { type: 'start_match'; payload: Record<string, never> }
   | { type: 'start_next_round'; payload: Record<string, never> }
@@ -530,6 +553,8 @@ export interface PlayerView {
   connected: boolean;
   isBotControlled?: boolean;
   isReadyHand: boolean;
+  selectedMultiplier?: number;
+  showSelectedMultiplier?: boolean;
   concealedCount: number;
   meldCount: number;
   melds: PlayerMeldView[];
@@ -559,14 +584,17 @@ export interface WaitingControls {
   canIncreaseMinimumHuFan: boolean;
   dealerRepeatEnabled: boolean;
   dealerDoubleEnabled: boolean;
+  playerMultiplierSelectionEnabled?: boolean;
   canToggleDealerRepeat: boolean;
   canToggleDealerDouble: boolean;
+  canTogglePlayerMultiplierSelection?: boolean;
 }
 
 export interface TableSettingsView {
   minimumHuFan: MinimumHuFan;
   dealerRepeatEnabled: boolean;
   dealerDoubleEnabled: boolean;
+  playerMultiplierSelectionEnabled?: boolean;
 }
 
 export interface LocalTileView {
@@ -709,7 +737,7 @@ export interface ActionEffectView {
   label: string;
   emphasis: 'draw' | 'discard' | 'claim' | 'kong' | 'system';
   seat: Seat | null;
-  calloutTone?: 'chow' | 'pung' | 'kong' | 'hu' | 'ready_hand' | null;
+  calloutTone?: 'chow' | 'pung' | 'kong' | 'hu' | 'ready_hand' | 'multiplier' | null;
   tileCode?: string | null;
 }
 

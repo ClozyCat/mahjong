@@ -1,3 +1,5 @@
+use std::collections::BTreeMap;
+
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
@@ -104,4 +106,7 @@ impl KongTrackerEntry {
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Default)]
 #[serde(default)]
-pub struct RuleRuntimeState {}
+pub struct RuleRuntimeState {
+    #[serde(default)]
+    pub player_multipliers: BTreeMap<Seat, i64>,
+}

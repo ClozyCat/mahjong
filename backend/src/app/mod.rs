@@ -243,6 +243,7 @@ pub(crate) fn initial_room_state_with_owner(
         minimum_hu_fan: crate::core::state::room::default_minimum_hu_fan(),
         dealer_repeat_enabled: false,
         dealer_double_enabled: false,
+        player_multiplier_selection_enabled: false,
         ready_hand_enabled: true,
         seats: Vec::new(),
         match_state: None,
@@ -537,6 +538,9 @@ pub(crate) fn timeout_auto_response_seats(room: &RoomState) -> Vec<usize> {
                 .filter(|seat| {
                     rob.offered_hu_seats.contains(seat) && !rob.responded_seats.contains(seat)
                 })
+                .collect(),
+            Some(PendingAction::PlayerMultiplierSelection(selection)) => (0..MAX_SEATS)
+                .filter(|seat| !selection.responded_seats.contains(seat))
                 .collect(),
             None => Vec::new(),
         },
@@ -955,6 +959,7 @@ mod tests {
             minimum_hu_fan: crate::core::state::room::default_minimum_hu_fan(),
             dealer_repeat_enabled: false,
             dealer_double_enabled: false,
+            player_multiplier_selection_enabled: false,
             ready_hand_enabled: true,
             seats: vec![SeatState {
                 seat_index: 0,
@@ -1001,6 +1006,7 @@ mod tests {
             minimum_hu_fan: crate::core::state::room::default_minimum_hu_fan(),
             dealer_repeat_enabled: false,
             dealer_double_enabled: false,
+            player_multiplier_selection_enabled: false,
             ready_hand_enabled: true,
             seats: vec![SeatState {
                 seat_index: 2,
@@ -1042,6 +1048,7 @@ mod tests {
             minimum_hu_fan: crate::core::state::room::default_minimum_hu_fan(),
             dealer_repeat_enabled: false,
             dealer_double_enabled: false,
+            player_multiplier_selection_enabled: false,
             ready_hand_enabled: true,
             seats: vec![
                 SeatState {
@@ -1099,6 +1106,7 @@ mod tests {
             minimum_hu_fan: crate::core::state::room::default_minimum_hu_fan(),
             dealer_repeat_enabled: false,
             dealer_double_enabled: false,
+            player_multiplier_selection_enabled: false,
             ready_hand_enabled: true,
             seats: vec![SeatState {
                 seat_index: 0,
@@ -1138,6 +1146,7 @@ mod tests {
             minimum_hu_fan: crate::core::state::room::default_minimum_hu_fan(),
             dealer_repeat_enabled: false,
             dealer_double_enabled: false,
+            player_multiplier_selection_enabled: false,
             ready_hand_enabled: true,
             seats: vec![SeatState {
                 seat_index: 0,

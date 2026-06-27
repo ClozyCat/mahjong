@@ -268,7 +268,7 @@ pub fn compute_hu_settlement(
             })
             .collect(),
     };
-    apply_dealer_double_to_settlement(&state, &mut settlement);
+    apply_score_multipliers_to_settlement(&state, &mut settlement);
     Ok(settlement)
 }
 
@@ -407,7 +407,9 @@ pub fn hu_action_hint_in_room_state(room: &RoomState, seat_index: usize) -> Opti
         PendingAction::RobKongWindow(rob) if rob_kong_action_offers_seat(rob, seat_index) => {
             Some("discard")
         }
-        PendingAction::ClaimWindow(_) | PendingAction::RobKongWindow(_) => None,
+        PendingAction::ClaimWindow(_)
+        | PendingAction::RobKongWindow(_)
+        | PendingAction::PlayerMultiplierSelection(_) => None,
     }
 }
 
@@ -577,17 +579,19 @@ pub(crate) fn compute_hu_settlement_for_state(
             })
             .collect(),
     };
-    apply_dealer_double_to_settlement(state, &mut settlement);
+    apply_score_multipliers_to_settlement(state, &mut settlement);
     Ok(settlement)
 }
 
-fn apply_dealer_double_to_settlement(state: &RoomState, settlement: &mut RoundSettlement) {
-    if !state.dealer_double_enabled {
-        return;
-    }
+fn apply_score_multipliers_to_settlement(state: &RoomState, settlement: &mut RoundSettlement) {
     let Some(winner_seat) = settlement.winner_seat else {
         return;
     };
+    let seat_count = state
+        .round_state
+        .as_ref()
+        .map(|round| round.players.len())
+        .unwrap_or(MAX_SEATS);
     let dealer_seat = state
         .round_state
         .as_ref()
@@ -599,34 +603,81 @@ fn apply_dealer_double_to_settlement(state: &RoomState, settlement: &mut RoundSe
                 .map(|match_state| match_state.dealer_seat)
         })
         .unwrap_or(0);
-    let payer_seats = settlement
-        .score_delta
-        .fan_delta_by_seat
-        .iter()
-        .filter_map(|(&seat, &delta)| {
-            (seat != winner_seat
-                && delta < 0
-                && (seat == dealer_seat || winner_seat == dealer_seat))
-                .then_some((seat, -delta))
-        })
-        .collect::<Vec<_>>();
+    let player_multipliers = state
+        .round_state
+        .as_ref()
+        .map(|round| &round.rule_state.player_multipliers);
 
-    if payer_seats.is_empty() {
-        return;
-    }
-    for (payer_seat, extra_payment) in payer_seats {
-        *settlement
+    let payment_multiplier = |payer: usize, receiver: usize| -> i64 {
+        let payer_multiplier = player_multipliers
+            .and_then(|values| values.get(&payer).copied())
+            .unwrap_or(1)
+            .clamp(1, 3);
+        let receiver_multiplier = player_multipliers
+            .and_then(|values| values.get(&receiver).copied())
+            .unwrap_or(1)
+            .clamp(1, 3);
+        let dealer_multiplier =
+            if state.dealer_double_enabled && (payer == dealer_seat || receiver == dealer_seat) {
+                2
+            } else {
+                1
+            };
+        payer_multiplier * receiver_multiplier * dealer_multiplier
+    };
+
+    if settlement.win_type == "self_draw" {
+        let base_payment = settlement
             .score_delta
             .fan_delta_by_seat
-            .entry(payer_seat)
-            .or_default() -= extra_payment;
-        *settlement
-            .score_delta
-            .fan_delta_by_seat
-            .entry(winner_seat)
-            .or_default() += extra_payment;
+            .iter()
+            .filter_map(|(&seat, &delta)| (seat != winner_seat && delta < 0).then_some(-delta))
+            .next()
+            .unwrap_or(0);
+        let mut fan_delta_by_seat = zero_score_map(seat_count);
+        for payer in 0..seat_count {
+            if payer == winner_seat {
+                continue;
+            }
+            let payment = base_payment * payment_multiplier(payer, winner_seat);
+            *fan_delta_by_seat.entry(payer).or_default() -= payment;
+            *fan_delta_by_seat.entry(winner_seat).or_default() += payment;
+        }
+        settlement.score_delta.fan_delta_by_seat = fan_delta_by_seat;
+    } else if let Some(discarder_seat) = settlement.discarder_seat {
+        let base_deltas = settlement.score_delta.fan_delta_by_seat.clone();
+        let mut fan_delta_by_seat = zero_score_map(seat_count);
+        for payer in 0..seat_count {
+            if payer == winner_seat {
+                continue;
+            }
+            let base_payment = base_deltas
+                .get(&payer)
+                .copied()
+                .filter(|delta| *delta < 0)
+                .map(|delta| -delta)
+                .unwrap_or(0);
+            if base_payment <= 0 {
+                continue;
+            }
+            let payment = base_payment * payment_multiplier(payer, winner_seat);
+            *fan_delta_by_seat.entry(payer).or_default() -= payment;
+            *fan_delta_by_seat.entry(winner_seat).or_default() += payment;
+        }
+        if !fan_delta_by_seat.contains_key(&discarder_seat) {
+            fan_delta_by_seat.insert(discarder_seat, 0);
+        }
+        settlement.score_delta.fan_delta_by_seat = fan_delta_by_seat;
     }
 
+    apply_score_multipliers_to_kong_detail(
+        state,
+        dealer_seat,
+        &payment_multiplier,
+        &mut settlement.kong_score_detail,
+    );
+    settlement.score_delta.kong_delta_by_seat =
+        total_kong_delta_by_seat(&settlement.kong_score_detail, seat_count);
     for seat in 0..MAX_SEATS {
         let fan_delta = settlement
             .score_delta
@@ -645,6 +696,48 @@ fn apply_dealer_double_to_settlement(state: &RoomState, settlement: &mut RoundSe
             .total_delta_by_seat
             .insert(seat, fan_delta + kong_delta);
     }
+}
+
+fn apply_score_multipliers_to_kong_detail(
+    _state: &RoomState,
+    _dealer_seat: usize,
+    payment_multiplier: &dyn Fn(usize, usize) -> i64,
+    kong_score_detail: &mut [SettlementKongScoreDetailEntry],
+) {
+    for entry in kong_score_detail {
+        let actor_seat = entry.actor_seat;
+        let base_unit = entry
+            .delta_by_seat
+            .get(&actor_seat)
+            .copied()
+            .unwrap_or(0)
+            .checked_div(entry.payer_seats.len().max(1) as i64)
+            .unwrap_or(0)
+            .abs()
+            .max(1);
+        let seat_count = entry.delta_by_seat.len().max(MAX_SEATS);
+        let mut delta_by_seat = zero_score_map(seat_count);
+        for payer in &entry.payer_seats {
+            let payment = base_unit * payment_multiplier(*payer, actor_seat);
+            *delta_by_seat.entry(*payer).or_default() -= payment;
+            *delta_by_seat.entry(actor_seat).or_default() += payment;
+        }
+        entry.delta_by_seat = delta_by_seat;
+    }
+}
+
+fn total_kong_delta_by_seat(
+    entries: &[SettlementKongScoreDetailEntry],
+    seat_count: usize,
+) -> std::collections::BTreeMap<usize, i64> {
+    let mut totals = zero_score_map(seat_count);
+    for entry in entries {
+        for seat in 0..seat_count {
+            *totals.entry(seat).or_default() +=
+                entry.delta_by_seat.get(&seat).copied().unwrap_or(0);
+        }
+    }
+    totals
 }
 
 pub fn apply_hu_settlement_output_in_room_state(
@@ -755,7 +848,9 @@ pub fn hu_action_hint(room: &Value, seat_index: usize) -> Option<&'static str> {
         PendingAction::RobKongWindow(rob) if rob_kong_action_offers_seat(rob, seat_index) => {
             Some("discard")
         }
-        PendingAction::ClaimWindow(_) | PendingAction::RobKongWindow(_) => None,
+        PendingAction::ClaimWindow(_)
+        | PendingAction::RobKongWindow(_)
+        | PendingAction::PlayerMultiplierSelection(_) => None,
     }
 }
 
@@ -1549,6 +1644,7 @@ mod tests {
             minimum_hu_fan: crate::core::state::room::default_minimum_hu_fan(),
             dealer_repeat_enabled: false,
             dealer_double_enabled: false,
+            player_multiplier_selection_enabled: false,
             ready_hand_enabled: true,
             seats: (0..4)
                 .map(|seat_index| SeatState {

@@ -38,4 +38,5 @@ pub enum PlayerAction {
     Kong { tile_ids: Vec<TileId> },
     Hu,
     Pass,
+    SelectMultiplier { multiplier: i64 },
 }

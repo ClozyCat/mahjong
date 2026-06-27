@@ -5,7 +5,10 @@ use std::collections::BTreeMap;
 use crate::core::engine::EngineOutput;
 use crate::core::engine::planner::{plan_flower_action, plan_round_start_payload};
 use crate::core::event::GameEvent;
-use crate::core::state::{ContinueActionState, MatchState, RoomState, SeatState};
+use crate::core::state::{
+    ContinueActionState, MatchState, PendingAction, PendingTimeout, PlayerMultiplierSelectionAction,
+    RoomState, SeatState,
+};
 use crate::core::tile::Tile;
 
 use super::runtime::{
@@ -29,6 +32,7 @@ use crate::core::engine::reducer::update_room_state;
 const MAX_SEATS: usize = 4;
 const CONTINUE_ACTION_AUTO_ADVANCE_SECONDS: i64 = 15;
 const BOT_TAKEOVER_AUTO_CONTINUE_SECONDS: i64 = 3;
+const PLAYER_MULTIPLIER_SELECTION_SECONDS: i64 = 8;
 const WIND_ORDER: [&str; 4] = ["east", "south", "west", "north"];
 
 #[cfg(test)]
@@ -386,6 +390,33 @@ fn start_round_in_room_state(
     room.round_state = Some(round_state);
     room.pending_timeout = Some(pending_timeout);
     room.continue_action = None;
+    maybe_start_player_multiplier_selection(room);
+}
+
+pub(crate) fn player_multiplier_selection_deadline_iso() -> String {
+    (Utc::now() + TimeDelta::seconds(PLAYER_MULTIPLIER_SELECTION_SECONDS))
+        .to_rfc3339_opts(SecondsFormat::Millis, true)
+}
+
+pub(crate) fn maybe_start_player_multiplier_selection(room: &mut RoomState) {
+    if !room.player_multiplier_selection_enabled {
+        return;
+    }
+    let Some(round) = room.round_state.as_mut() else {
+        return;
+    };
+    round.rule_state.player_multipliers = (0..MAX_SEATS).map(|seat| (seat, 1)).collect();
+    round.pending_action = Some(PendingAction::PlayerMultiplierSelection(
+        PlayerMultiplierSelectionAction::default(),
+    ));
+    round.version += 1;
+    room.pending_timeout = Some(PendingTimeout {
+        kind: "player_multiplier_selection".to_string(),
+        seat_index: round.current_actor,
+        deadline_at: Some(player_multiplier_selection_deadline_iso()),
+        drawn_tile_id: None,
+        extended_with_extra: false,
+    });
 }
 
 fn seat_rotation_for_completed_wind(prevailing_wind: &str) -> Option<[usize; MAX_SEATS]> {
@@ -828,6 +859,7 @@ mod tests {
             minimum_hu_fan: crate::core::state::room::default_minimum_hu_fan(),
             dealer_repeat_enabled: false,
             dealer_double_enabled: false,
+            player_multiplier_selection_enabled: false,
             ready_hand_enabled: true,
             seats,
             match_state: None,
@@ -881,6 +913,7 @@ mod tests {
             minimum_hu_fan: crate::core::state::room::default_minimum_hu_fan(),
             dealer_repeat_enabled: false,
             dealer_double_enabled: false,
+            player_multiplier_selection_enabled: false,
             ready_hand_enabled: true,
             seats: (0..4).map(seat_state).collect(),
             match_state: None,
@@ -944,7 +977,7 @@ mod tests {
                 version: 1,
                 score_trackers: RoundScoreTrackers::default(),
                 last_action_context: LastActionContext::default(),
-                rule_state: RuleRuntimeState {},
+                rule_state: RuleRuntimeState::default(),
                 restricted_discard_tile_key: None,
             }),
             pending_timeout: Some(PendingTimeout {

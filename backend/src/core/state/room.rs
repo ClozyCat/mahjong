@@ -22,6 +22,8 @@ pub struct RoomState {
     pub dealer_repeat_enabled: bool,
     #[serde(default)]
     pub dealer_double_enabled: bool,
+    #[serde(default)]
+    pub player_multiplier_selection_enabled: bool,
     #[serde(default = "default_ready_hand_enabled")]
     pub ready_hand_enabled: bool,
     pub seats: Vec<SeatState>,
@@ -332,6 +334,7 @@ mod tests {
             minimum_hu_fan: crate::core::state::room::default_minimum_hu_fan(),
             dealer_repeat_enabled: true,
             dealer_double_enabled: true,
+            player_multiplier_selection_enabled: false,
             ready_hand_enabled: true,
             seats: vec![SeatState {
                 seat_index: 0,
@@ -382,6 +385,7 @@ mod tests {
         .expect("room should parse");
         assert!(!default_room.dealer_repeat_enabled);
         assert!(!default_room.dealer_double_enabled);
+        assert!(!default_room.player_multiplier_selection_enabled);
 
         let enabled_room = RoomState::from_room_value(&json!({
             "table_code": "RULE",
@@ -389,10 +393,12 @@ mod tests {
             "mode": "normal",
             "dealer_repeat_enabled": true,
             "dealer_double_enabled": true,
+            "player_multiplier_selection_enabled": true,
             "seats": []
         }))
         .expect("room should parse");
         assert!(enabled_room.dealer_repeat_enabled);
         assert!(enabled_room.dealer_double_enabled);
+        assert!(enabled_room.player_multiplier_selection_enabled);
     }
 }

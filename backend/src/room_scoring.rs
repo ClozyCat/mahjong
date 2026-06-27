@@ -256,6 +256,7 @@ mod tests {
             minimum_hu_fan: crate::core::state::room::default_minimum_hu_fan(),
             dealer_repeat_enabled: false,
             dealer_double_enabled: false,
+            player_multiplier_selection_enabled: false,
             ready_hand_enabled: true,
             seats: Vec::new(),
             match_state: Some(MatchState {
@@ -328,7 +329,7 @@ mod tests {
                     }],
                 },
                 last_action_context: LastActionContext::default(),
-                rule_state: RuleRuntimeState {},
+                rule_state: RuleRuntimeState::default(),
                 restricted_discard_tile_key: Some("w1".to_string()),
             }),
             pending_timeout: Some(PendingTimeout {

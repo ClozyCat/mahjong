@@ -534,6 +534,9 @@ const ACTIVE_HAND_LAYOUT_COUNT = 14;
 const WAITING_HAND_PLACEHOLDER_COUNT = 13;
 
 const ACTION_PRIORITY: Partial<Record<BattleActionView['id'], number>> = {
+  multiplier_1: -3,
+  multiplier_2: -2,
+  multiplier_3: -1,
   hu: 0,
   kong: 1,
   pung: 2,
@@ -629,6 +632,9 @@ function getActionEffectClass(actionId: BattleActionView['id']) {
     discard: 'action-dock__action--themed action-dock__action--themed-discard',
     ready_hand: 'action-dock__action--themed action-dock__action--themed-ready-hand',
     pass: 'action-dock__action--themed action-dock__action--themed-pass',
+    multiplier_1: 'action-dock__action--multiplier',
+    multiplier_2: 'action-dock__action--multiplier',
+    multiplier_3: 'action-dock__action--multiplier',
   };
 
   return lookup[actionId] ?? '';

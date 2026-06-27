@@ -533,6 +533,7 @@ describe('TableStage', () => {
     const onMinimumHuFanChange = vi.fn();
     const onDealerRepeatChange = vi.fn();
     const onDealerDoubleChange = vi.fn();
+    const onPlayerMultiplierSelectionChange = vi.fn();
 
     render(
       <TableStage
@@ -561,8 +562,11 @@ describe('TableStage', () => {
         canToggleDealerRepeat
         dealerDoubleEnabled={false}
         canToggleDealerDouble
+        playerMultiplierSelectionEnabled={false}
+        canTogglePlayerMultiplierSelection
         onDealerRepeatChange={onDealerRepeatChange}
         onDealerDoubleChange={onDealerDoubleChange}
+        onPlayerMultiplierSelectionChange={onPlayerMultiplierSelectionChange}
         preMatchActions={[
           { id: 'invite', label: '邀请', enabled: true, emphasis: 'medium' },
           { id: 'start_match', label: '开始对局', enabled: true, emphasis: 'high' },
@@ -584,6 +588,7 @@ describe('TableStage', () => {
     expect(screen.getByLabelText('当前起和番数 4 番')).toBeInTheDocument();
     expect(screen.getByRole('checkbox', { name: '连庄' })).toBeChecked();
     expect(screen.getByRole('checkbox', { name: '庄家翻倍' })).not.toBeChecked();
+    expect(screen.getByRole('checkbox', { name: '自选倍率' })).not.toBeChecked();
 
     fireEvent.click(screen.getByRole('button', { name: '增加 BOT' }));
     fireEvent.click(screen.getByRole('button', { name: '减少 BOT' }));
@@ -591,6 +596,7 @@ describe('TableStage', () => {
     fireEvent.click(screen.getByRole('button', { name: '降低起和番数' }));
     fireEvent.click(screen.getByRole('checkbox', { name: '连庄' }));
     fireEvent.click(screen.getByRole('checkbox', { name: '庄家翻倍' }));
+    fireEvent.click(screen.getByRole('checkbox', { name: '自选倍率' }));
 
     expect(onAddBot).toHaveBeenCalledTimes(1);
     expect(onRemoveBot).toHaveBeenCalledTimes(1);
@@ -598,6 +604,7 @@ describe('TableStage', () => {
     expect(onMinimumHuFanChange).toHaveBeenNthCalledWith(2, 2);
     expect(onDealerRepeatChange).toHaveBeenCalledWith(false);
     expect(onDealerDoubleChange).toHaveBeenCalledWith(true);
+    expect(onPlayerMultiplierSelectionChange).toHaveBeenCalledWith(true);
   });
 
   it('does not mute score, flower, and hand stat plates by deprecated ready state while waiting for match start', () => {
@@ -1132,6 +1139,32 @@ describe('TableStage', () => {
     expect(screen.getByText('听')).toBeInTheDocument();
     expect(container.querySelector('.table-stage__action-callout.table-stage__spotlight--right')).not.toBeNull();
     expect(container.querySelector('.table-stage__action-callout--ready_hand')).not.toBeNull();
+  });
+
+  it('renders the selected multiplier callout with the event label', () => {
+    const { container } = render(
+      <TableStage
+        discards={{
+          top: [],
+          left: [],
+          right: [],
+          bottom: [],
+        }}
+        activeSeat="bottom"
+        lastDiscard={null}
+        promptText={null}
+        actionEffect={{
+          key: 'multiplier-1',
+          label: '×3',
+          emphasis: 'claim',
+          seat: 'bottom',
+          calloutTone: 'multiplier',
+        }}
+      />,
+    );
+
+    expect(screen.getByText('×3')).toBeInTheDocument();
+    expect(container.querySelector('.table-stage__action-callout--multiplier')).not.toBeNull();
   });
 
   it('keeps the incoming ready_hand discard hidden on the initial render frame', () => {

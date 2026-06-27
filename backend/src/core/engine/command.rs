@@ -81,6 +81,9 @@ pub fn parse_player_command(
             tile_ids: tile_ids.to_vec(),
         }),
         "pass" => Ok(PlayerAction::Pass),
+        "multiplier_1" => Ok(PlayerAction::SelectMultiplier { multiplier: 1 }),
+        "multiplier_2" => Ok(PlayerAction::SelectMultiplier { multiplier: 2 }),
+        "multiplier_3" => Ok(PlayerAction::SelectMultiplier { multiplier: 3 }),
         _ => return None,
     };
 

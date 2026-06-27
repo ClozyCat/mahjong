@@ -162,6 +162,7 @@ mod tests {
             minimum_hu_fan: crate::core::state::room::default_minimum_hu_fan(),
             dealer_repeat_enabled: false,
             dealer_double_enabled: false,
+            player_multiplier_selection_enabled: false,
             ready_hand_enabled: true,
             seats: vec![
                 SeatState {
@@ -202,6 +203,7 @@ mod tests {
             minimum_hu_fan: crate::core::state::room::default_minimum_hu_fan(),
             dealer_repeat_enabled: false,
             dealer_double_enabled: false,
+            player_multiplier_selection_enabled: false,
             ready_hand_enabled: true,
             seats: vec![
                 SeatState {
@@ -240,6 +242,7 @@ mod tests {
             minimum_hu_fan: crate::evaluation::EVALUATION_MINIMUM_HU_FAN,
             dealer_repeat_enabled: false,
             dealer_double_enabled: false,
+            player_multiplier_selection_enabled: false,
             ready_hand_enabled: false,
             seats: vec![SeatState {
                 seat_index: 0,

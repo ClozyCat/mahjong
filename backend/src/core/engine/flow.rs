@@ -3,6 +3,7 @@ use crate::core::state::RoomState;
 use crate::rules::standard::{
     actions::{
         apply_claim_window_action_in_room_state, apply_discard_action_output_in_room_state,
+        apply_player_multiplier_selection_in_room_state,
         apply_ready_hand_action_output_in_room_state, apply_rob_kong_hu_in_room_state,
         apply_rob_kong_pass_in_room_state, try_handle_self_kong_action_output_in_room_state,
     },
@@ -105,6 +106,12 @@ fn try_handle_player_action_command(
         (LocalPlayerActionKind::ClaimWindow, PlayerAction::Pung { tile_ids }) => Some(
             apply_claim_window_action_in_room_state(room, seat_index, "pung", &tile_ids),
         ),
+        (
+            LocalPlayerActionKind::PlayerMultiplierSelection,
+            PlayerAction::SelectMultiplier { multiplier },
+        ) => Some(apply_player_multiplier_selection_in_room_state(
+            room, seat_index, multiplier,
+        )),
         _ => None,
     }
 }

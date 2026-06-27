@@ -9,7 +9,8 @@ pub mod wall;
 pub use match_state::MatchState;
 pub use pending::{
     ClaimResponse, ClaimWindowAction, ContinueActionState, LastActionContext, PendingAction,
-    PendingTimeout, RobKongWindowAction, pending_action_response_seat,
+    PendingTimeout, PlayerMultiplierSelectionAction, RobKongWindowAction,
+    pending_action_response_seat,
 };
 pub use player::{
     DisplayMeldOrientation, DisplayMeldState, DisplayMeldTileState, PlayerRoundState, SeatState,

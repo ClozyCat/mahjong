@@ -10,7 +10,10 @@ use crate::core::state::{PendingAction, RoomState, pending_action_response_seat}
 use crate::projection::bot_view::{BotClaimOption, build_bot_context_view};
 use crate::room_scoring::RoomScoringCache;
 
-use super::actions::apply_discard_action_output_in_room_state;
+use super::actions::{
+    apply_discard_action_output_in_room_state,
+    complete_player_multiplier_selection_timeout_in_room_state,
+};
 #[cfg(test)]
 use super::actions::{
     apply_discard_action, can_resolve_claim_window_timeout_locally, can_resolve_discard_locally,
@@ -65,6 +68,7 @@ pub fn try_process_due_timeout_in_room_state(
     let fallback_timeout_seat = match pending_timeout.kind.as_str() {
         "active_turn" => round.current_actor,
         "claim_window" => pending_timeout.seat_index,
+        "player_multiplier_selection" => pending_timeout.seat_index,
         _ => return Ok(None),
     };
     let timeout_seat = pending_timeout_extra_time_seat(room).unwrap_or(fallback_timeout_seat);
@@ -139,6 +143,9 @@ pub fn try_process_due_timeout_in_room_state(
             )?)
         }
         "claim_window" => resolve_claim_timeout_in_room_state(room),
+        "player_multiplier_selection" => {
+            complete_player_multiplier_selection_timeout_in_room_state(room).map(Some)
+        }
         _ => Ok(None),
     }
 }
@@ -188,6 +195,7 @@ pub fn try_process_due_timeout(room: &mut Value) -> Option<Vec<Value>> {
                 None
             }
         }
+        "player_multiplier_selection" => None,
         _ => None,
     }
 }
@@ -550,6 +558,7 @@ fn next_bot_action_for_state_with_policy_resolver(
     let pending_timeout = state.pending_timeout.as_ref()?;
     let round = state.round_state.as_ref()?;
     match pending_timeout.kind.as_str() {
+        "player_multiplier_selection" => next_bot_multiplier_selection_action(state),
         "active_turn" => {
             let seat_index = round.current_actor;
             let cache = RoomScoringCache::from_state(state);
@@ -662,9 +671,28 @@ fn next_bot_action_for_state_with_policy_resolver(
                     &policy_config,
                 )
             }
+            PendingAction::PlayerMultiplierSelection(_) => None,
         },
         _ => None,
     }
+}
+
+fn next_bot_multiplier_selection_action(state: &RoomState) -> Option<BotAction> {
+    let selection = match state.round_state.as_ref()?.pending_action.as_ref()? {
+        PendingAction::PlayerMultiplierSelection(selection) => selection,
+        _ => return None,
+    };
+    state
+        .seats
+        .iter()
+        .filter(|seat| seat.is_bot)
+        .map(|seat| seat.seat_index)
+        .find(|seat_index| !selection.responded_seats.contains(seat_index))
+        .map(|seat_index| BotAction {
+            seat_index,
+            action_type: "multiplier_1".to_string(),
+            tile_ids: Vec::new(),
+        })
 }
 
 fn pending_timeout_extra_time_seat(room: &RoomState) -> Option<usize> {

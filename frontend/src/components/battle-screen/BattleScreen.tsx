@@ -42,6 +42,7 @@ interface BattleScreenProps {
   onMinimumHuFanChange?: (minimumHuFan: NonNullable<BattleViewModel['waitingControls']>['minimumHuFan']) => void;
   onDealerRepeatChange?: (enabled: boolean) => void;
   onDealerDoubleChange?: (enabled: boolean) => void;
+  onPlayerMultiplierSelectionChange?: (enabled: boolean) => void;
   onQuickChat?: (targetSeat: number, emoji: QuickChatEmoji) => void;
   onPointGesture?: (targetSeat: number) => void;
   isBgmEnabled?: boolean;
@@ -85,6 +86,7 @@ export function BattleScreen({
   onMinimumHuFanChange,
   onDealerRepeatChange,
   onDealerDoubleChange,
+  onPlayerMultiplierSelectionChange,
   onQuickChat,
   onPointGesture,
   isBgmEnabled = false,
@@ -451,11 +453,16 @@ export function BattleScreen({
               }
               dealerRepeatEnabled={viewModel.tableSettings.dealerRepeatEnabled}
               dealerDoubleEnabled={viewModel.tableSettings.dealerDoubleEnabled}
+              playerMultiplierSelectionEnabled={viewModel.tableSettings.playerMultiplierSelectionEnabled}
               canToggleDealerRepeat={
                 !viewModel.dealerSelection && (viewModel.waitingControls?.canToggleDealerRepeat ?? false)
               }
               canToggleDealerDouble={
                 !viewModel.dealerSelection && (viewModel.waitingControls?.canToggleDealerDouble ?? false)
+              }
+              canTogglePlayerMultiplierSelection={
+                !viewModel.dealerSelection &&
+                (viewModel.waitingControls?.canTogglePlayerMultiplierSelection ?? false)
               }
               canLeaveTable={viewModel.canLeaveTable}
               themeId={themeId}
@@ -469,6 +476,7 @@ export function BattleScreen({
               onMinimumHuFanChange={onMinimumHuFanChange}
               onDealerRepeatChange={onDealerRepeatChange}
               onDealerDoubleChange={onDealerDoubleChange}
+              onPlayerMultiplierSelectionChange={onPlayerMultiplierSelectionChange}
               onQuickChat={onQuickChat}
               onPointGesture={onPointGesture}
               isBgmEnabled={isBgmEnabled}

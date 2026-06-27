@@ -55,7 +55,8 @@ impl PendingActionView {
         match self {
             Self::ActiveTurn { options, .. }
             | Self::ClaimWindow { options, .. }
-            | Self::RobKongWindow { options, .. } => options.clone(),
+            | Self::RobKongWindow { options, .. }
+            | Self::PlayerMultiplierSelection { options, .. } => options.clone(),
         }
     }
 
@@ -63,14 +64,17 @@ impl PendingActionView {
         match self {
             Self::ActiveTurn { deadline_at, .. }
             | Self::ClaimWindow { deadline_at, .. }
-            | Self::RobKongWindow { deadline_at, .. } => deadline_at.clone(),
+            | Self::RobKongWindow { deadline_at, .. }
+            | Self::PlayerMultiplierSelection { deadline_at, .. } => deadline_at.clone(),
         }
     }
 
     pub fn seat_index(&self) -> Option<Seat> {
         match self {
             Self::ActiveTurn { seat_index, .. } => Some(*seat_index),
-            Self::ClaimWindow { .. } | Self::RobKongWindow { .. } => None,
+            Self::ClaimWindow { .. }
+            | Self::RobKongWindow { .. }
+            | Self::PlayerMultiplierSelection { .. } => None,
         }
     }
 
@@ -88,6 +92,7 @@ impl PendingActionView {
                 remaining_extra_time,
                 ..
             } => *remaining_extra_time,
+            Self::PlayerMultiplierSelection { .. } => None,
         }
     }
 }

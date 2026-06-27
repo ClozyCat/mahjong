@@ -265,25 +265,31 @@ describe('createMatchViewModel', () => {
     expect(viewModel.waitingControls?.canRemoveBot).toBe(false);
     expect(viewModel.waitingControls?.dealerRepeatEnabled).toBe(false);
     expect(viewModel.waitingControls?.dealerDoubleEnabled).toBe(false);
+    expect(viewModel.waitingControls?.playerMultiplierSelectionEnabled).toBe(false);
     expect(viewModel.waitingControls?.canToggleDealerRepeat).toBe(true);
     expect(viewModel.waitingControls?.canToggleDealerDouble).toBe(true);
+    expect(viewModel.waitingControls?.canTogglePlayerMultiplierSelection).toBe(true);
   });
 
   it('exposes waiting dealer rule toggles from the room snapshot', () => {
     const state = createWaitingSessionState();
     state.roomSnapshot!.payload.dealer_repeat_enabled = true;
     state.roomSnapshot!.payload.dealer_double_enabled = true;
+    state.roomSnapshot!.payload.player_multiplier_selection_enabled = true;
 
     const viewModel = createMatchViewModel(state);
 
     expect(viewModel.waitingControls?.dealerRepeatEnabled).toBe(true);
     expect(viewModel.waitingControls?.dealerDoubleEnabled).toBe(true);
+    expect(viewModel.waitingControls?.playerMultiplierSelectionEnabled).toBe(true);
     expect(viewModel.waitingControls?.canToggleDealerRepeat).toBe(true);
     expect(viewModel.waitingControls?.canToggleDealerDouble).toBe(true);
+    expect(viewModel.waitingControls?.canTogglePlayerMultiplierSelection).toBe(true);
     expect(viewModel.tableSettings).toEqual({
       minimumHuFan: 8,
       dealerRepeatEnabled: true,
       dealerDoubleEnabled: true,
+      playerMultiplierSelectionEnabled: true,
     });
   });
 
@@ -292,6 +298,7 @@ describe('createMatchViewModel', () => {
     state.roomSnapshot!.payload.minimum_hu_fan = 4;
     state.roomSnapshot!.payload.dealer_repeat_enabled = true;
     state.roomSnapshot!.payload.dealer_double_enabled = false;
+    state.roomSnapshot!.payload.player_multiplier_selection_enabled = true;
 
     const viewModel = createMatchViewModel(state);
 
@@ -300,6 +307,7 @@ describe('createMatchViewModel', () => {
       minimumHuFan: 4,
       dealerRepeatEnabled: true,
       dealerDoubleEnabled: false,
+      playerMultiplierSelectionEnabled: true,
     });
   });
 

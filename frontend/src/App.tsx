@@ -63,6 +63,7 @@ import {
   createPointGestureMessage,
   createSetMinimumHuFanMessage,
   createSetDealerDoubleMessage,
+  createSetPlayerMultiplierSelectionMessage,
   createSetDealerRepeatMessage,
   createSetBotTakeoverMessage,
   createStartMatchMessage,
@@ -1398,6 +1399,10 @@ export default function App() {
     sendMessage(serializeClientMessage(createSetDealerDoubleMessage(enabled)));
   }
 
+  function handleSetPlayerMultiplierSelection(enabled: boolean) {
+    sendMessage(serializeClientMessage(createSetPlayerMultiplierSelectionMessage(enabled)));
+  }
+
   function handleSetBotTakeover(enabled: boolean) {
     sendMessage(serializeClientMessage(createSetBotTakeoverMessage(enabled)));
   }
@@ -1505,6 +1510,7 @@ export default function App() {
           onMinimumHuFanChange={handleSetMinimumHuFan}
           onDealerRepeatChange={handleSetDealerRepeat}
           onDealerDoubleChange={handleSetDealerDouble}
+          onPlayerMultiplierSelectionChange={handleSetPlayerMultiplierSelection}
           onQuickChat={handleQuickChat}
           onPointGesture={handlePointGesture}
         />

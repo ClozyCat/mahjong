@@ -578,6 +578,7 @@ mod global_features_tests {
             minimum_hu_fan: crate::core::state::room::default_minimum_hu_fan(),
             dealer_repeat_enabled: false,
             dealer_double_enabled: false,
+            player_multiplier_selection_enabled: false,
             ready_hand_enabled: true,
             seats: Vec::new(),
             match_state: Some(MatchState {
@@ -654,7 +655,7 @@ mod global_features_tests {
                 restricted_discard_tile_key: None,
                 score_trackers: RoundScoreTrackers::default(),
                 last_action_context: LastActionContext::default(),
-                rule_state: RuleRuntimeState {},
+                rule_state: RuleRuntimeState::default(),
                 settlement: None,
                 version: 1,
             }),

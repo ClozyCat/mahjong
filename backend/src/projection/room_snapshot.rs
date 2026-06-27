@@ -31,6 +31,7 @@ struct PlayerRoomSnapshot {
     minimum_hu_fan: i64,
     dealer_repeat_enabled: bool,
     dealer_double_enabled: bool,
+    player_multiplier_selection_enabled: bool,
     ready_hand_enabled: bool,
     seats: Vec<PublicSeatView>,
     local_seat: Seat,
@@ -79,6 +80,7 @@ struct PlayerSeatView {
     display_melds: Vec<DisplayMeldView>,
     flowers: Vec<String>,
     discards: Vec<String>,
+    selected_multiplier: i64,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -149,6 +151,14 @@ pub enum PendingActionView {
         remaining_extra_time: Option<i64>,
         extended_with_extra: bool,
     },
+    #[serde(rename = "player_multiplier_selection")]
+    PlayerMultiplierSelection {
+        deadline_at: Option<String>,
+        responded_seats: Vec<Seat>,
+        selected_multipliers: BTreeMap<Seat, i64>,
+        options: Vec<String>,
+        extended_with_extra: bool,
+    },
 }
 
 pub fn room_snapshot_message(
@@ -166,7 +176,8 @@ pub fn room_snapshot_message(
         minimum_hu_fan: state.minimum_hu_fan,
         dealer_repeat_enabled: state.dealer_repeat_enabled,
         dealer_double_enabled: state.dealer_double_enabled,
-        ready_hand_enabled: true,
+        player_multiplier_selection_enabled: state.player_multiplier_selection_enabled,
+        ready_hand_enabled: state.ready_hand_enabled,
         seats: public_seats(state),
         local_seat,
         match_state: state.match_state.clone(),
@@ -317,7 +328,27 @@ pub fn build_pending_action_view(
                 deadline_at,
                 remaining_extra_time,
             )),
+            PendingAction::PlayerMultiplierSelection(selection) => Some(
+                player_multiplier_pending_action_view(
+                    local_seat,
+                    selection,
+                    deadline_at,
+                    pending_timeout.extended_with_extra,
+                ),
+            ),
         },
+        "player_multiplier_selection" => {
+            let PendingAction::PlayerMultiplierSelection(selection) = round.pending_action.as_ref()?
+            else {
+                return None;
+            };
+            Some(player_multiplier_pending_action_view(
+                local_seat,
+                selection,
+                deadline_at,
+                pending_timeout.extended_with_extra,
+            ))
+        }
         "rob_kong_window" => {
             let PendingAction::RobKongWindow(rob) = round.pending_action.as_ref()? else {
                 return None;
@@ -331,6 +362,29 @@ pub fn build_pending_action_view(
             ))
         }
         _ => None,
+    }
+}
+
+fn player_multiplier_pending_action_view(
+    local_seat: Seat,
+    selection: &crate::core::state::PlayerMultiplierSelectionAction,
+    deadline_at: Option<String>,
+    extended_with_extra: bool,
+) -> PendingActionView {
+    PendingActionView::PlayerMultiplierSelection {
+        deadline_at,
+        responded_seats: selection.responded_seats.clone(),
+        selected_multipliers: selection.selected_multipliers.clone(),
+        options: if selection.responded_seats.contains(&local_seat) {
+            Vec::new()
+        } else {
+            vec![
+                "multiplier_1".to_string(),
+                "multiplier_2".to_string(),
+                "multiplier_3".to_string(),
+            ]
+        },
+        extended_with_extra,
     }
 }
 
@@ -474,6 +528,12 @@ fn private_round_state(
                     .iter()
                     .map(|tile| tile.tile_key.clone())
                     .collect(),
+                selected_multiplier: round
+                    .rule_state
+                    .player_multipliers
+                    .get(&player.seat)
+                    .copied()
+                    .unwrap_or(1),
             }
         })
         .collect();
@@ -779,8 +839,9 @@ mod tests {
             owner_user_id: None,
             multiplier: 1,
             minimum_hu_fan: crate::core::state::room::default_minimum_hu_fan(),
-            dealer_repeat_enabled: false,
-            dealer_double_enabled: false,
+            dealer_repeat_enabled: true,
+            dealer_double_enabled: true,
+            player_multiplier_selection_enabled: true,
             ready_hand_enabled: true,
             seats: seats(),
             match_state: Some(MatchState {
@@ -856,6 +917,7 @@ mod tests {
             minimum_hu_fan: crate::core::state::room::default_minimum_hu_fan(),
             dealer_repeat_enabled: true,
             dealer_double_enabled: true,
+            player_multiplier_selection_enabled: true,
             ready_hand_enabled: true,
             seats: seats(),
             match_state: Some(MatchState {
@@ -879,6 +941,7 @@ mod tests {
 
         assert_eq!(snapshot["payload"]["dealer_repeat_enabled"], true);
         assert_eq!(snapshot["payload"]["dealer_double_enabled"], true);
+        assert_eq!(snapshot["payload"]["player_multiplier_selection_enabled"], true);
         assert_eq!(snapshot["payload"]["match_state"]["dealer_repeat_count"], 2);
     }
 
@@ -893,6 +956,7 @@ mod tests {
             minimum_hu_fan: crate::core::state::room::default_minimum_hu_fan(),
             dealer_repeat_enabled: false,
             dealer_double_enabled: false,
+            player_multiplier_selection_enabled: false,
             ready_hand_enabled: true,
             seats: seats(),
             match_state: None,
@@ -941,6 +1005,7 @@ mod tests {
             minimum_hu_fan: crate::core::state::room::default_minimum_hu_fan(),
             dealer_repeat_enabled: false,
             dealer_double_enabled: false,
+            player_multiplier_selection_enabled: false,
             ready_hand_enabled: true,
             seats: seats(),
             match_state: None,
@@ -990,6 +1055,7 @@ mod tests {
             minimum_hu_fan: crate::core::state::room::default_minimum_hu_fan(),
             dealer_repeat_enabled: false,
             dealer_double_enabled: false,
+            player_multiplier_selection_enabled: false,
             ready_hand_enabled: true,
             seats: seats(),
             match_state: None,
@@ -1039,6 +1105,7 @@ mod tests {
             minimum_hu_fan: crate::core::state::room::default_minimum_hu_fan(),
             dealer_repeat_enabled: false,
             dealer_double_enabled: false,
+            player_multiplier_selection_enabled: false,
             ready_hand_enabled: true,
             seats: seats(),
             match_state: None,
@@ -1107,6 +1174,7 @@ mod tests {
             minimum_hu_fan: crate::core::state::room::default_minimum_hu_fan(),
             dealer_repeat_enabled: false,
             dealer_double_enabled: false,
+            player_multiplier_selection_enabled: false,
             ready_hand_enabled: true,
             seats: seats(),
             match_state: Some(match_state),
@@ -1158,6 +1226,7 @@ mod tests {
             minimum_hu_fan: crate::core::state::room::default_minimum_hu_fan(),
             dealer_repeat_enabled: false,
             dealer_double_enabled: false,
+            player_multiplier_selection_enabled: false,
             ready_hand_enabled: true,
             seats: seats(),
             match_state: None,
@@ -1206,6 +1275,7 @@ mod tests {
             minimum_hu_fan: crate::core::state::room::default_minimum_hu_fan(),
             dealer_repeat_enabled: false,
             dealer_double_enabled: false,
+            player_multiplier_selection_enabled: false,
             ready_hand_enabled: true,
             seats: seats(),
             match_state: None,
@@ -1266,6 +1336,7 @@ mod tests {
             minimum_hu_fan: crate::core::state::room::default_minimum_hu_fan(),
             dealer_repeat_enabled: false,
             dealer_double_enabled: false,
+            player_multiplier_selection_enabled: false,
             ready_hand_enabled: true,
             seats: seats(),
             match_state: None,
@@ -1322,6 +1393,7 @@ mod tests {
             minimum_hu_fan: crate::core::state::room::default_minimum_hu_fan(),
             dealer_repeat_enabled: false,
             dealer_double_enabled: false,
+            player_multiplier_selection_enabled: false,
             ready_hand_enabled: true,
             seats: seats(),
             match_state: None,
@@ -1452,6 +1524,7 @@ mod tests {
             minimum_hu_fan: crate::core::state::room::default_minimum_hu_fan(),
             dealer_repeat_enabled: false,
             dealer_double_enabled: false,
+            player_multiplier_selection_enabled: false,
             ready_hand_enabled: true,
             seats: seats(),
             match_state: None,

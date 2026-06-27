@@ -1,3 +1,5 @@
+use std::collections::BTreeMap;
+
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
@@ -98,6 +100,7 @@ impl LastActionContext {
 pub enum PendingAction {
     ClaimWindow(ClaimWindowAction),
     RobKongWindow(RobKongWindowAction),
+    PlayerMultiplierSelection(PlayerMultiplierSelectionAction),
 }
 
 impl PendingAction {
@@ -108,6 +111,7 @@ impl PendingAction {
         match self {
             Self::ClaimWindow(_) => "claim_window",
             Self::RobKongWindow(_) => "rob_kong_window",
+            Self::PlayerMultiplierSelection(_) => "player_multiplier_selection",
         }
     }
 
@@ -120,6 +124,7 @@ pub fn pending_action_response_seat(pending_action: &PendingAction) -> Option<Se
     match pending_action {
         PendingAction::ClaimWindow(claim) => next_claim_window_responder_seat(claim),
         PendingAction::RobKongWindow(rob) => next_rob_kong_responder_seat(rob),
+        PendingAction::PlayerMultiplierSelection(_) => None,
     }
 }
 
@@ -161,6 +166,13 @@ pub struct RobKongWindowAction {
     pub offered_hu_seats: Vec<Seat>,
     pub responded_seats: Vec<Seat>,
     pub claim_responses: Vec<ClaimResponse>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Default)]
+#[serde(default)]
+pub struct PlayerMultiplierSelectionAction {
+    pub responded_seats: Vec<Seat>,
+    pub selected_multipliers: BTreeMap<Seat, i64>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Default)]

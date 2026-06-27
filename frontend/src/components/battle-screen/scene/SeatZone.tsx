@@ -111,6 +111,14 @@ export const SeatZone = memo(function SeatZone({
               <TileStackIcon className="table-stage__stat-icon" />
               <span className="table-stage__stat-value">{player.concealedCount ?? 0}</span>
             </div>
+            {player.showSelectedMultiplier ? (
+              <div
+                className={`table-stage__stat-plate table-stage__stat-plate--multiplier${mutedStatPlateClass}`}
+                title="本局自选倍率"
+              >
+                <span className="table-stage__stat-value">×{player.selectedMultiplier ?? 1}</span>
+              </div>
+            ) : null}
             {player.isReadyHand ? (
               <div className="table-stage__stat-plate table-stage__stat-plate--tenpai" title="已听牌">
                 <ReadyIcon className="table-stage__stat-icon" />

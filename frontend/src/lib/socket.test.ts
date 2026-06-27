@@ -1,6 +1,12 @@
 import { describe, expect, it } from 'vitest';
 
-import { createJoinTableMessage, createSetBotTakeoverMessage, createSetDealerDoubleMessage, createSetDealerRepeatMessage } from './socket';
+import {
+  createJoinTableMessage,
+  createSetBotTakeoverMessage,
+  createSetDealerDoubleMessage,
+  createSetDealerRepeatMessage,
+  createSetPlayerMultiplierSelectionMessage,
+} from './socket';
 
 describe('socket message builders', () => {
   it('creates an authenticated join_table message', () => {
@@ -32,6 +38,12 @@ describe('socket message builders', () => {
       type: 'set_dealer_double',
       payload: {
         enabled: false,
+      },
+    });
+    expect(createSetPlayerMultiplierSelectionMessage(true)).toEqual({
+      type: 'set_player_multiplier_selection',
+      payload: {
+        enabled: true,
       },
     });
   });

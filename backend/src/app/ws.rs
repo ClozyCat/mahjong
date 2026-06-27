@@ -56,6 +56,7 @@ enum ClientMessage {
     SetMinimumHuFan(SetMinimumHuFanRequest),
     SetDealerRepeat(SetRuleToggleRequest),
     SetDealerDouble(SetRuleToggleRequest),
+    SetPlayerMultiplierSelection(SetRuleToggleRequest),
     SetBotTakeover(SetBotTakeoverRequest),
     StartMatch,
     StartNextRound,
@@ -332,6 +333,22 @@ async fn handle_client_message(
             )
             .await
         }
+        ClientMessage::SetPlayerMultiplierSelection(request) => {
+            let Some(seat_index) =
+                assert_active_owned_seat(&state, table_code, connection, role.owned_seat()).await
+            else {
+                return reject_to(connection, "seat_not_owned");
+            };
+            handle_set_dealer_rule_toggle(
+                state,
+                table_code,
+                connection,
+                seat_index,
+                request,
+                DealerRuleToggle::PlayerMultiplierSelection,
+            )
+            .await
+        }
         ClientMessage::SetBotTakeover(request) => {
             let Some(seat_index) =
                 assert_active_owned_seat(&state, table_code, connection, role.owned_seat()).await
@@ -411,6 +428,7 @@ fn room_is_evaluation(room: &RoomState) -> bool {
 enum DealerRuleToggle {
     Repeat,
     Double,
+    PlayerMultiplierSelection,
 }
 
 async fn assert_active_owned_seat(
@@ -826,6 +844,9 @@ async fn handle_set_dealer_rule_toggle(
     match toggle {
         DealerRuleToggle::Repeat => runtime.room.dealer_repeat_enabled = request.enabled,
         DealerRuleToggle::Double => runtime.room.dealer_double_enabled = request.enabled,
+        DealerRuleToggle::PlayerMultiplierSelection => {
+            runtime.room.player_multiplier_selection_enabled = request.enabled
+        }
     }
 
     let created_at = runtime.created_at.clone();

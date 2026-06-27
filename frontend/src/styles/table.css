@@ -891,6 +891,21 @@
   /* Ivory White */
 }
 
+.table-stage__stat-plate--multiplier {
+  --stat-accent: color-mix(in srgb, var(--theme-warning) 82%, var(--accent-2));
+  min-width: clamp(2.3rem, 5.6vw, 3rem);
+  border-color: color-mix(in srgb, var(--stat-accent) 30%, transparent);
+  background:
+    linear-gradient(180deg, color-mix(in srgb, var(--stat-accent) 14%, transparent), transparent),
+    color-mix(in srgb, var(--theme-panel-bg-strong) 46%, transparent);
+}
+
+.table-stage__stat-plate--multiplier .table-stage__stat-value {
+  font-family: 'KaiTi', 'STKaiti', 'Noto Serif SC', serif;
+  font-size: clamp(0.72rem, 2.4vmin, 0.96rem);
+  color: color-mix(in srgb, var(--theme-paper-strong) 70%, var(--stat-accent));
+}
+
 .table-stage__stat-plate--seat .table-stage__stat-icon {
   color: var(--stat-accent);
 }
@@ -904,6 +919,10 @@
 }
 
 .table-stage__stat-plate--hand .table-stage__stat-icon {
+  color: var(--stat-accent);
+}
+
+.table-stage__stat-plate--multiplier {
   color: var(--stat-accent);
 }
 
@@ -1508,6 +1527,17 @@
 .table-stage__action-callout--ready_hand {
   --table-stage-action-callout-ink: color-mix(in srgb, var(--accent) 92%, var(--theme-paper-strong));
   --table-stage-action-callout-glow: color-mix(in srgb, var(--accent) 42%, transparent);
+}
+
+.table-stage__action-callout--multiplier {
+  --table-stage-action-callout-ink: color-mix(in srgb, var(--theme-warning) 84%, var(--theme-paper-strong));
+  --table-stage-action-callout-glow: color-mix(in srgb, var(--theme-warning) 34%, transparent);
+  --table-stage-action-callout-aura-core: color-mix(in srgb, var(--theme-warning) 22%, transparent);
+}
+
+.table-stage__action-callout--multiplier .table-stage__action-callout-glyph {
+  min-width: 1.9em;
+  padding: 0 0.08em;
 }
 
 .table-stage__action-callout--hu {

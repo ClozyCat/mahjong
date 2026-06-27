@@ -141,7 +141,7 @@ pub fn plan_round_start_payload(
             kong_entries: Vec::new(),
         },
         last_action_context,
-        rule_state: RuleRuntimeState {},
+        rule_state: RuleRuntimeState::default(),
         restricted_discard_tile_key: None,
     };
 
@@ -226,6 +226,13 @@ pub fn compute_pending_timeout_value(
         Some(PendingAction::RobKongWindow(rob)) => Some(PendingTimeout {
             kind: "claim_window".to_string(),
             seat_index: rob.actor_seat,
+            deadline_at: Some(deadline_at),
+            drawn_tile_id: None,
+            extended_with_extra: false,
+        }),
+        Some(PendingAction::PlayerMultiplierSelection(_)) => Some(PendingTimeout {
+            kind: "player_multiplier_selection".to_string(),
+            seat_index: round.current_actor,
             deadline_at: Some(deadline_at),
             drawn_tile_id: None,
             extended_with_extra: false,
@@ -808,6 +815,7 @@ mod tests {
             minimum_hu_fan: crate::core::state::room::default_minimum_hu_fan(),
             dealer_repeat_enabled: false,
             dealer_double_enabled: false,
+            player_multiplier_selection_enabled: false,
             ready_hand_enabled: true,
             seats: Vec::new(),
             match_state: Some(crate::core::state::MatchState {

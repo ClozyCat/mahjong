@@ -18,6 +18,7 @@ pub enum LocalPlayerActionKind {
     SelfKong,
     ActiveTurnPass,
     RobKongPass,
+    PlayerMultiplierSelection,
 }
 
 pub fn classify_local_player_action(
@@ -60,7 +61,32 @@ pub fn classify_local_player_action(
                 None
             }
         }
+        PlayerAction::SelectMultiplier { .. } => multiplier_selection_supported(context, actor)
+            .then_some(LocalPlayerActionKind::PlayerMultiplierSelection),
     }
+}
+
+fn multiplier_selection_supported(context: &EngineContext, actor: Seat) -> bool {
+    if context.room.phase != "playing" {
+        return false;
+    }
+    if context
+        .room
+        .pending_timeout
+        .as_ref()
+        .map(|timeout| timeout.kind.as_str())
+        != Some("player_multiplier_selection")
+    {
+        return false;
+    }
+    let Some(round) = context.room.round_state.as_ref() else {
+        return false;
+    };
+    let Some(PendingAction::PlayerMultiplierSelection(selection)) = round.pending_action.as_ref()
+    else {
+        return false;
+    };
+    actor < round.players.len() && !selection.responded_seats.contains(&actor)
 }
 
 pub fn discard_supported_locally(context: &EngineContext, actor: Seat, tile_id: &str) -> bool {

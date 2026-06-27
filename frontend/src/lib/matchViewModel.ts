@@ -50,17 +50,23 @@ const ACTION_ORDER: BattleActionId[] = [
   'chow',
   'pung',
   'pass',
+  'multiplier_1',
+  'multiplier_2',
+  'multiplier_3',
 ];
 
 const PROMPT_ACTION_PRIORITY: Record<BackendActionType, number> = {
-  hu: 0,
-  kong: 1,
-  pung: 2,
-  chow: 3,
-  flower: 4,
-  discard: 5,
-  ready_hand: 6,
-  pass: 7,
+  multiplier_3: 0,
+  multiplier_2: 1,
+  multiplier_1: 2,
+  hu: 3,
+  kong: 4,
+  pung: 5,
+  chow: 6,
+  flower: 7,
+  discard: 8,
+  ready_hand: 9,
+  pass: 10,
 };
 
 const ACTION_LABELS: Record<BattleActionId, string> = {
@@ -76,6 +82,9 @@ const ACTION_LABELS: Record<BattleActionId, string> = {
   chow: '吃',
   pung: '碰',
   pass: '过',
+  multiplier_1: '×1',
+  multiplier_2: '×2',
+  multiplier_3: '×3',
 } as const satisfies Record<BattleActionId, string>;
 
 const MINIMUM_HU_FAN_OPTIONS: MinimumHuFan[] = [0, 2, 4, 6, 8];
@@ -93,7 +102,10 @@ function isBackendActionType(value: unknown): value is BackendActionType {
     value === 'hu' ||
     value === 'chow' ||
     value === 'pung' ||
-    value === 'pass'
+    value === 'pass' ||
+    value === 'multiplier_1' ||
+    value === 'multiplier_2' ||
+    value === 'multiplier_3'
   );
 }
 
@@ -610,8 +622,10 @@ function createWaitingControls(state: SessionState, options: MatchViewModelOptio
       !isEvaluationRoom,
     dealerRepeatEnabled: snapshot.dealer_repeat_enabled ?? false,
     dealerDoubleEnabled: snapshot.dealer_double_enabled ?? false,
+    playerMultiplierSelectionEnabled: snapshot.player_multiplier_selection_enabled ?? false,
     canToggleDealerRepeat: Boolean(localSeatState) && !dealerSelection && !isEvaluationRoom,
     canToggleDealerDouble: Boolean(localSeatState) && !dealerSelection && !isEvaluationRoom,
+    canTogglePlayerMultiplierSelection: Boolean(localSeatState) && !dealerSelection && !isEvaluationRoom,
   };
 }
 
@@ -622,6 +636,7 @@ function createTableSettings(state: SessionState): TableSettingsView {
     minimumHuFan: normalizeMinimumHuFan(snapshot?.minimum_hu_fan),
     dealerRepeatEnabled: snapshot?.dealer_repeat_enabled ?? false,
     dealerDoubleEnabled: snapshot?.dealer_double_enabled ?? false,
+    playerMultiplierSelectionEnabled: snapshot?.player_multiplier_selection_enabled ?? false,
   };
 }
 
@@ -769,8 +784,10 @@ function createActionViews(
               ? kongCandidateGroups.length > 0
               : id === 'chow'
                 ? chowCandidateGroups.length > 0
-                : id === 'pung'
+            : id === 'pung'
                 ? pungCandidateGroups.length > 0
+                : id === 'multiplier_1' || id === 'multiplier_2' || id === 'multiplier_3'
+                  ? true
                   : true;
     }
 
@@ -783,7 +800,10 @@ function createActionViews(
         id === 'hu' ||
         id === 'chow' ||
         id === 'pung' ||
-        id === 'pass')
+        id === 'pass' ||
+        id === 'multiplier_1' ||
+        id === 'multiplier_2' ||
+        id === 'multiplier_3')
     ) {
       enabled = false;
     }
@@ -892,6 +912,8 @@ function createPlayers(state: SessionState, options: MatchViewModelOptions = {})
   const flowerCountBySeat = getFlowerCountBySeat(state);
   const dealerSelection = createDealerSelection(state, options);
   const crownSeatIndex = getUniqueHighestPointsSeatIndex(snapshot.seats);
+  const showSelectedMultiplier =
+    Boolean(snapshot.player_multiplier_selection_enabled) && snapshot.phase !== 'waiting';
 
   return snapshot.seats
     .map((seat) => {
@@ -920,6 +942,8 @@ function createPlayers(state: SessionState, options: MatchViewModelOptions = {})
         connected: seat.connected,
         isBotControlled,
         isReadyHand: Boolean(privatePlayer?.is_ready_hand),
+        selectedMultiplier: privatePlayer?.selected_multiplier ?? 1,
+        showSelectedMultiplier,
         concealedCount: privatePlayer?.concealed_count ?? 0,
         meldCount: privatePlayer?.melds.length ?? 0,
         melds: privatePlayer?.display_melds ?? normalizeDisplayMelds(privatePlayer?.melds),
@@ -1779,6 +1803,17 @@ function createRoundEventActionEffect(
       seat: effectSeat,
       calloutTone: 'ready_hand',
       tileCode: getTileCodeFromEventTileId(event.event?.tile_id),
+    };
+  }
+
+  if (event.event_type === 'player_multiplier_selected') {
+    const multiplier = typeof event.event?.multiplier === 'number' ? event.event.multiplier : 1;
+    return {
+      key,
+      label: `×${multiplier}`,
+      emphasis: 'claim',
+      seat: effectSeat,
+      calloutTone: 'multiplier',
     };
   }
 

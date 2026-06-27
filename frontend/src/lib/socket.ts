@@ -88,6 +88,15 @@ export function createSetDealerDoubleMessage(enabled: boolean): ClientMessage {
   };
 }
 
+export function createSetPlayerMultiplierSelectionMessage(enabled: boolean): ClientMessage {
+  return {
+    type: 'set_player_multiplier_selection',
+    payload: {
+      enabled,
+    },
+  };
+}
+
 export function createStartMatchMessage(): ClientMessage {
   return {
     type: 'start_match',

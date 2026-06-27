@@ -20,8 +20,10 @@ interface TableChromeProps {
   canIncreaseMinimumHuFan: boolean;
   dealerRepeatEnabled: boolean;
   dealerDoubleEnabled: boolean;
+  playerMultiplierSelectionEnabled: boolean;
   canToggleDealerRepeat: boolean;
   canToggleDealerDouble: boolean;
+  canTogglePlayerMultiplierSelection: boolean;
   canLeaveTable: boolean;
   onLeaveTable?: () => void;
   onOpenInviteDialog?: () => void;
@@ -32,6 +34,7 @@ interface TableChromeProps {
   onMinimumHuFanChange?: (minimumHuFan: MinimumHuFan) => void;
   onDealerRepeatChange?: (enabled: boolean) => void;
   onDealerDoubleChange?: (enabled: boolean) => void;
+  onPlayerMultiplierSelectionChange?: (enabled: boolean) => void;
   isBgmEnabled?: boolean;
   onToggleBgm?: () => void;
   isVoiceEnabled?: boolean;
@@ -57,8 +60,10 @@ export const TableChrome = memo(function TableChrome({
   canIncreaseMinimumHuFan,
   dealerRepeatEnabled,
   dealerDoubleEnabled,
+  playerMultiplierSelectionEnabled,
   canToggleDealerRepeat,
   canToggleDealerDouble,
+  canTogglePlayerMultiplierSelection,
   canLeaveTable,
   onLeaveTable,
   onOpenInviteDialog,
@@ -69,6 +74,7 @@ export const TableChrome = memo(function TableChrome({
   onMinimumHuFanChange,
   onDealerRepeatChange,
   onDealerDoubleChange,
+  onPlayerMultiplierSelectionChange,
   isBgmEnabled = false,
   onToggleBgm,
   isVoiceEnabled = true,
@@ -109,7 +115,10 @@ export const TableChrome = memo(function TableChrome({
   const shouldShowMinimumHuFanControls =
     shouldShowPreMatchActions || canDecreaseMinimumHuFan || canIncreaseMinimumHuFan;
   const shouldShowDealerRuleControls =
-    shouldShowPreMatchActions || canToggleDealerRepeat || canToggleDealerDouble;
+    shouldShowPreMatchActions ||
+    canToggleDealerRepeat ||
+    canToggleDealerDouble ||
+    canTogglePlayerMultiplierSelection;
   const shouldShowEvaluationAction = Boolean(onOpenEvaluationDialog && shouldShowPreMatchActions);
   const canOpenSeatInvite = resolvedOccupiedSeatCount < seatCapacity;
   const minimumHuFanOptions: MinimumHuFan[] = [0, 2, 4, 6, 8];
@@ -121,6 +130,7 @@ export const TableChrome = memo(function TableChrome({
     `${minimumHuFan}番起和`,
     dealerRepeatEnabled ? '连庄' : null,
     dealerDoubleEnabled ? '庄家翻倍' : null,
+    playerMultiplierSelectionEnabled ? '自选倍率' : null,
   ].filter(Boolean).join(' | ');
 
   return (
@@ -394,6 +404,15 @@ export const TableChrome = memo(function TableChrome({
                     onChange={(event) => onDealerDoubleChange?.(event.currentTarget.checked)}
                   />
                   <span>庄家翻倍</span>
+                </label>
+                <label className="table-stage__rule-toggle">
+                  <input
+                    type="checkbox"
+                    checked={playerMultiplierSelectionEnabled}
+                    disabled={!canTogglePlayerMultiplierSelection}
+                    onChange={(event) => onPlayerMultiplierSelectionChange?.(event.currentTarget.checked)}
+                  />
+                  <span>自选倍率</span>
                 </label>
               </div>
             ) : null}
