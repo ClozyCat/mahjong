@@ -1,7 +1,7 @@
 {
-  "created_at_utc": "2026-06-22T12:33:59.159142+00:00",
+  "created_at_utc": "2026-06-26T10:08:31.581209+00:00",
   "onnx": "backend/assets/sft/sft.onnx",
-  "checkpoint": "backend/bot_trainer/v2/checkpoints/best.pt",
+  "checkpoint": "backend/bot_trainer/v2/sft/checkpoints/best.pt",
   "model_config": {
     "tile_plane_count": 10,
     "scalar_feature_count": 13,
