@@ -900,6 +900,33 @@
     color-mix(in srgb, var(--theme-panel-bg-strong) 46%, transparent);
 }
 
+.table-stage__stat-plate--multiplier-1 {
+  --stat-accent: #26a69a; /* Jade Teal */
+}
+
+.table-stage__stat-plate--multiplier-2 {
+  --stat-accent: #f5b041; /* Amber Gold */
+}
+
+.table-stage__stat-plate--multiplier-3 {
+  --stat-accent: #ec7063; /* Ruby Red */
+  animation: multiplier-3-pulse 2s ease-in-out infinite alternate;
+}
+
+@keyframes multiplier-3-pulse {
+  from {
+    box-shadow: 
+      0 4px 12px var(--theme-shadow-soft),
+      0 0 4px color-mix(in srgb, var(--stat-accent) 20%, transparent);
+  }
+  to {
+    box-shadow: 
+      0 4px 16px var(--theme-shadow-soft),
+      0 0 12px color-mix(in srgb, var(--stat-accent) 55%, transparent);
+    border-color: color-mix(in srgb, var(--stat-accent) 60%, transparent);
+  }
+}
+
 .table-stage__stat-plate--multiplier .table-stage__stat-value {
   font-family: 'KaiTi', 'STKaiti', 'Noto Serif SC', serif;
   font-size: clamp(0.72rem, 2.4vmin, 0.96rem);

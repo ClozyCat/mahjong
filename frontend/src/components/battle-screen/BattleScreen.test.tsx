@@ -434,7 +434,7 @@ describe('BattleScreen', () => {
       );
 
       expect(audioMock.audio).toHaveBeenCalledTimes(1);
-      expect(String(audioMock.audio.mock.calls[0][0])).toContain('ncprime-rise');
+      expect(String(audioMock.audio.mock.calls[0][0])).toContain('universfield-game-bonus-02-294436');
       expect(audioMock.play).toHaveBeenCalledTimes(1);
     } finally {
       audioMock.restore();

@@ -632,9 +632,9 @@ function getActionEffectClass(actionId: BattleActionView['id']) {
     discard: 'action-dock__action--themed action-dock__action--themed-discard',
     ready_hand: 'action-dock__action--themed action-dock__action--themed-ready-hand',
     pass: 'action-dock__action--themed action-dock__action--themed-pass',
-    multiplier_1: 'action-dock__action--multiplier',
-    multiplier_2: 'action-dock__action--multiplier',
-    multiplier_3: 'action-dock__action--multiplier',
+    multiplier_1: 'action-dock__action--multiplier action-dock__action--multiplier-1',
+    multiplier_2: 'action-dock__action--multiplier action-dock__action--multiplier-2',
+    multiplier_3: 'action-dock__action--multiplier action-dock__action--multiplier-3',
   };
 
   return lookup[actionId] ?? '';

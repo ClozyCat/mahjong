@@ -113,9 +113,10 @@ export const SeatZone = memo(function SeatZone({
             </div>
             {player.showSelectedMultiplier ? (
               <div
-                className={`table-stage__stat-plate table-stage__stat-plate--multiplier${mutedStatPlateClass}`}
+                className={`table-stage__stat-plate table-stage__stat-plate--multiplier table-stage__stat-plate--multiplier-${player.selectedMultiplier ?? 1}${mutedStatPlateClass}`}
                 title="本局自选倍率"
               >
+                <MultiplierIcon className="table-stage__stat-icon" />
                 <span className="table-stage__stat-value">×{player.selectedMultiplier ?? 1}</span>
               </div>
             ) : null}
@@ -223,6 +224,21 @@ function ReadyIcon({ className }: { className?: string }) {
       <circle cx="16" cy="16" r="10" opacity="0.2" />
       <path d="M16 8C11.6 8 8 11.6 8 16C8 20.4 11.6 24 16 24C20.4 24 24 20.4 24 16C24 11.6 20.4 8 16 8ZM16 22C12.7 22 10 19.3 10 16C10 12.7 12.7 10 16 10C19.3 10 22 12.7 22 16C22 19.3 19.3 22 16 22Z" />
       <path d="M16 12C13.8 12 12 13.8 12 16C12 18.2 13.8 20 16 20C18.2 20 20 18.2 20 16C20 13.8 18.2 12 16 12Z" className="table-stage__tenpai-pulse" />
+    </svg>
+  );
+}
+
+function MultiplierIcon({ className }: { className?: string }) {
+  return (
+    <svg viewBox="0 0 32 32" className={className} fill="currentColor">
+      {/* Background outline octagonal/shield shape for premium Chinese aesthetic */}
+      <path d="M16 3 L26 8 V20 L16 29 L6 20 V8 Z" opacity="0.25" />
+      {/* Outer border line */}
+      <path d="M16 5.5 L24 9.5 V18.5 L16 26.5 L8 18.5 V9.5 Z" fill="none" stroke="currentColor" strokeWidth="1.5" />
+      {/* Clean multiplication sign + inner chevrons representing multiplying effect */}
+      <path d="M13 13 L19 19 M19 13 L13 19" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" />
+      <path d="M16 9 L20 12" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" opacity="0.6" />
+      <path d="M16 9 L12 12" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" opacity="0.6" />
     </svg>
   );
 }
