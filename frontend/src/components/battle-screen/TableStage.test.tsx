@@ -1141,32 +1141,6 @@ describe('TableStage', () => {
     expect(container.querySelector('.table-stage__action-callout--ready_hand')).not.toBeNull();
   });
 
-  it('renders the selected multiplier callout with the event label', () => {
-    const { container } = render(
-      <TableStage
-        discards={{
-          top: [],
-          left: [],
-          right: [],
-          bottom: [],
-        }}
-        activeSeat="bottom"
-        lastDiscard={null}
-        promptText={null}
-        actionEffect={{
-          key: 'multiplier-1',
-          label: '×3',
-          emphasis: 'claim',
-          seat: 'bottom',
-          calloutTone: 'multiplier',
-        }}
-      />,
-    );
-
-    expect(screen.getByText('×3')).toBeInTheDocument();
-    expect(container.querySelector('.table-stage__action-callout--multiplier')).not.toBeNull();
-  });
-
   it('keeps the incoming ready_hand discard hidden on the initial render frame', () => {
     const markup = renderToStaticMarkup(
       <TableStage

@@ -1806,17 +1806,6 @@ function createRoundEventActionEffect(
     };
   }
 
-  if (event.event_type === 'player_multiplier_selected') {
-    const multiplier = typeof event.event?.multiplier === 'number' ? event.event.multiplier : 1;
-    return {
-      key,
-      label: `×${multiplier}`,
-      emphasis: 'claim',
-      seat: effectSeat,
-      calloutTone: 'multiplier',
-    };
-  }
-
   if (event.event_type === 'claim_made') {
     const claimType = String(event.event?.claim_type ?? '');
     return {
