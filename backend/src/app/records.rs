@@ -232,6 +232,7 @@ fn archive_input_from_room(
     table_created_at: &str,
     archived_at: &str,
     participants: &[TableParticipantRecord],
+    special_bot_user_ids: &std::collections::HashSet<i64>,
 ) -> Result<Option<ArchiveRoundInput>> {
     let Some(owner_user_id) = room.owner_user_id else {
         return Ok(None);
@@ -247,7 +248,17 @@ fn archive_input_from_room(
     };
 
     let current_seat_by_user = current_seat_by_participant(room, participants);
-    let special_bot_seats = special_bot_seats(room);
+    let mut special_bot_seats = special_bot_seats(room);
+    for participant in participants {
+        if special_bot_user_ids.contains(&participant.user_id) {
+            special_bot_seats.insert(
+                current_seat_by_user
+                    .get(&participant.user_id)
+                    .copied()
+                    .unwrap_or(participant.seat_index),
+            );
+        }
+    }
     let points_enabled = !pure_bot_seat_present(room);
     let winning_seats = settlement
         .winning_seats()
@@ -276,7 +287,7 @@ fn archive_input_from_room(
             &settlement.score_delta.total_delta_by_seat,
             seat_index,
             &special_bot_seats,
-            points_enabled,
+            points_enabled && !special_bot_user_ids.contains(&participant.user_id),
         );
         player_results.push(ArchivedRoundPlayerInput {
             user_id: participant.user_id,
@@ -318,7 +329,14 @@ pub(crate) async fn archive_current_round_if_needed(
         .db
         .list_active_table_participants_for_table(&room.table_code)
         .await?;
-    let Some(input) = archive_input_from_room(room, table_created_at, archived_at, &participants)?
+    let special_bot_user_ids = state.inner.special_bot_user_ids.read().await.clone();
+    let Some(input) = archive_input_from_room(
+        room,
+        table_created_at,
+        archived_at,
+        &participants,
+        &special_bot_user_ids,
+    )?
     else {
         return Ok(None);
     };
@@ -1154,6 +1172,75 @@ mod tests {
             .expect("special bot should exist");
         assert_eq!(owner.points, INITIAL_USER_POINTS + 7);
         assert_eq!(guest.points, INITIAL_USER_POINTS - 7);
+        assert_eq!(special_bot.points, INITIAL_USER_POINTS);
+
+        Ok(())
+    }
+
+    #[tokio::test(flavor = "current_thread")]
+    async fn point_events_skip_special_bot_user_even_without_seat_type() -> Result<()> {
+        let (state, worker) = test_state().await?;
+        crate::app::server::seed_special_bot_users(&state).await?;
+        let owner_user_id = register_user(&worker, "INVITE300017", "Owner").await?;
+        let special_bot_user_id = *state
+            .inner
+            .special_bot_user_ids
+            .read()
+            .await
+            .iter()
+            .next()
+            .expect("special bot seed should create users");
+        let special_bot = worker
+            .get_user_by_id(special_bot_user_id)
+            .await?
+            .expect("special bot user should exist");
+        let mut bot_seat = seat(1, &special_bot.display_name, false);
+        bot_seat.user_id = Some(special_bot_user_id);
+        let room = base_room(
+            "ROOMREC_SPECIAL_USER",
+            2,
+            vec![seat(0, "Owner", false), bot_seat],
+            &[(0, 7), (1, -7)],
+            &[(0, 107), (1, 93)],
+            0,
+            &["all_sequences"],
+        );
+        persist_participant(
+            &worker,
+            &room,
+            "2026-05-06T00:00:00Z",
+            owner_user_id,
+            0,
+            "Owner",
+        )
+        .await?;
+        persist_participant(
+            &worker,
+            &room,
+            "2026-05-06T00:00:00Z",
+            special_bot_user_id,
+            1,
+            &special_bot.display_name,
+        )
+        .await?;
+
+        archive_current_round_if_needed(
+            &state,
+            &room,
+            "2026-05-06T00:00:00Z",
+            "2026-05-06T01:00:00Z",
+        )
+        .await?;
+
+        let owner = worker
+            .get_user_by_id(owner_user_id)
+            .await?
+            .expect("owner should exist");
+        let special_bot = worker
+            .get_user_by_id(special_bot_user_id)
+            .await?
+            .expect("special bot should exist");
+        assert_eq!(owner.points, INITIAL_USER_POINTS);
         assert_eq!(special_bot.points, INITIAL_USER_POINTS);
 
         Ok(())

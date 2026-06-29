@@ -328,17 +328,18 @@ pub fn build_pending_action_view(
                 deadline_at,
                 remaining_extra_time,
             )),
-            PendingAction::PlayerMultiplierSelection(selection) => Some(
-                player_multiplier_pending_action_view(
+            PendingAction::PlayerMultiplierSelection(selection) => {
+                Some(player_multiplier_pending_action_view(
                     local_seat,
                     selection,
                     deadline_at,
                     pending_timeout.extended_with_extra,
-                ),
-            ),
+                ))
+            }
         },
         "player_multiplier_selection" => {
-            let PendingAction::PlayerMultiplierSelection(selection) = round.pending_action.as_ref()?
+            let PendingAction::PlayerMultiplierSelection(selection) =
+                round.pending_action.as_ref()?
             else {
                 return None;
             };
@@ -941,7 +942,10 @@ mod tests {
 
         assert_eq!(snapshot["payload"]["dealer_repeat_enabled"], true);
         assert_eq!(snapshot["payload"]["dealer_double_enabled"], true);
-        assert_eq!(snapshot["payload"]["player_multiplier_selection_enabled"], true);
+        assert_eq!(
+            snapshot["payload"]["player_multiplier_selection_enabled"],
+            true
+        );
         assert_eq!(snapshot["payload"]["match_state"]["dealer_repeat_count"], 2);
     }
 

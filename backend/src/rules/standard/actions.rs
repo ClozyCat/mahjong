@@ -60,8 +60,10 @@ pub fn apply_player_multiplier_selection_in_room_state(
         return Err("invalid_action".to_string());
     }
     let round = round_state_mut(room)?;
-    let PendingAction::PlayerMultiplierSelection(selection) =
-        round.pending_action.as_mut().ok_or_else(|| "invalid_action".to_string())?
+    let PendingAction::PlayerMultiplierSelection(selection) = round
+        .pending_action
+        .as_mut()
+        .ok_or_else(|| "invalid_action".to_string())?
     else {
         return Err("invalid_action".to_string());
     };
@@ -72,7 +74,9 @@ pub fn apply_player_multiplier_selection_in_room_state(
     selection.responded_seats.push(seat_index);
     selection.responded_seats.sort();
     selection.responded_seats.dedup();
-    selection.selected_multipliers.insert(seat_index, multiplier);
+    selection
+        .selected_multipliers
+        .insert(seat_index, multiplier);
     round
         .rule_state
         .player_multipliers
@@ -101,7 +105,11 @@ pub(crate) fn complete_player_multiplier_selection_timeout_in_room_state(
     };
     let mut messages = Vec::new();
     for seat in 0..round.players.len() {
-        let multiplier = selection.selected_multipliers.get(&seat).copied().unwrap_or(1);
+        let multiplier = selection
+            .selected_multipliers
+            .get(&seat)
+            .copied()
+            .unwrap_or(1);
         round.rule_state.player_multipliers.insert(seat, multiplier);
         if !selection.responded_seats.contains(&seat) {
             selection.responded_seats.push(seat);
