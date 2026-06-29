@@ -2,8 +2,7 @@ import type { InviteDialogUser } from './PlayerInviteDialog';
 
 interface EvaluationDialogProps {
   isOpen: boolean;
-  humanUsers: InviteDialogUser[];
-  aiUsers: InviteDialogUser[];
+  users: InviteDialogUser[];
   selectedUserIds: number[];
   currentUserId?: number | null;
   isSubmitting?: boolean;
@@ -14,8 +13,7 @@ interface EvaluationDialogProps {
 
 export function EvaluationDialog({
   isOpen,
-  humanUsers,
-  aiUsers,
+  users,
   selectedUserIds,
   currentUserId = null,
   isSubmitting = false,
@@ -28,7 +26,7 @@ export function EvaluationDialog({
   }
 
   const selectedSet = new Set(selectedUserIds);
-  const candidateUsers = [...humanUsers, ...aiUsers].filter(
+  const candidateUsers = users.filter(
     ({ user, status }) => user.user_id !== currentUserId && status === 'online',
   );
   const canSelectMore = selectedUserIds.length < 3;
@@ -51,7 +49,7 @@ export function EvaluationDialog({
                 onChange={() => onToggleSubject(user.user_id)}
               />
               <span>{user.display_label || user.display_name}</span>
-              <small>{user.is_special_bot ? 'AI' : statusText(status)}</small>
+              <small>{statusText(status)}</small>
             </label>
           );
         })}

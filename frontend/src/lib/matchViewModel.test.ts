@@ -820,7 +820,7 @@ describe('createMatchViewModel', () => {
           seats: [
             { seat_index: 0, nickname: 'Player A', connected: true, is_bot: false, seat_type: 'human' },
             { seat_index: 1, nickname: 'Bot 1', connected: true, is_bot: true, seat_type: 'bot' },
-            { seat_index: 2, nickname: '舒伯特', connected: true, is_bot: true, seat_type: 'special_bot' },
+            { seat_index: 2, nickname: 'Bot 2', connected: true, is_bot: true, seat_type: 'bot' },
             { seat_index: 3, nickname: 'Player D', connected: true, is_bot: false, seat_type: 'human' },
           ],
         },
@@ -889,7 +889,7 @@ describe('createMatchViewModel', () => {
     });
   });
 
-  it('does not count special bot seats as removable standby bots', () => {
+  it('counts standalone bot seats as removable standby bots', () => {
     const base = createWaitingSessionState();
     const viewModel = createMatchViewModel({
       ...base,
@@ -899,7 +899,7 @@ describe('createMatchViewModel', () => {
           ...base.roomSnapshot!.payload,
           seats: [
             { seat_index: 0, nickname: 'Player A', connected: true, is_bot: false, seat_type: 'human' },
-            { seat_index: 1, nickname: '舒伯特', connected: true, is_bot: true, seat_type: 'special_bot' },
+            { seat_index: 1, nickname: 'Bot 1', connected: true, is_bot: true, seat_type: 'bot' },
           ],
         },
       },
@@ -907,12 +907,12 @@ describe('createMatchViewModel', () => {
 
     expect(viewModel.waitingControls).toMatchObject({
       occupiedSeats: 2,
-      botCount: 0,
+      botCount: 1,
       canAddBot: true,
-      canRemoveBot: false,
+      canRemoveBot: true,
     });
-    expect(viewModel.players.find((player) => player.name === '舒伯特')).toMatchObject({
-      seatType: 'special_bot',
+    expect(viewModel.players.find((player) => player.name === 'Bot 1')).toMatchObject({
+      seatType: 'bot',
       isBotControlled: true,
     });
   });
@@ -1573,7 +1573,7 @@ describe('createMatchViewModel', () => {
     expect(leftSeat?.displayLabel).toBe('Player B Lv.11');
   });
 
-  it('shows the crown title only for a unique highest-points non-normal-bot player', () => {
+  it('shows the crown title only for a unique highest-points human player', () => {
     const base = createPlayingSessionState();
     const viewModel = createMatchViewModel({
       ...base,
@@ -1583,7 +1583,7 @@ describe('createMatchViewModel', () => {
           ...base.roomSnapshot!.payload,
           seats: [
             { seat_index: 0, nickname: 'Player A', connected: true, points: 600, title: 'Lv.12', is_bot: false, seat_type: 'human' },
-            { seat_index: 1, nickname: 'Player B', connected: true, points: 700, title: 'Lv.14', is_bot: false, seat_type: 'special_bot' },
+            { seat_index: 1, nickname: 'Player B', connected: true, points: 700, title: 'Lv.14', is_bot: false, seat_type: 'human' },
             { seat_index: 2, nickname: 'Player C', connected: true, points: 650, title: 'Lv.13', is_bot: false, seat_type: 'human' },
           ],
         },
@@ -1604,7 +1604,7 @@ describe('createMatchViewModel', () => {
           ...base.roomSnapshot!.payload,
           seats: [
             { seat_index: 0, nickname: 'Player A', connected: true, points: 700, title: 'Lv.14', is_bot: false, seat_type: 'human' },
-            { seat_index: 1, nickname: '舒伯特', connected: true, points: 700, title: 'Lv.14', is_bot: true, seat_type: 'special_bot' },
+            { seat_index: 1, nickname: 'Player B', connected: true, points: 700, title: 'Lv.14', is_bot: false, seat_type: 'human' },
           ],
         },
       },

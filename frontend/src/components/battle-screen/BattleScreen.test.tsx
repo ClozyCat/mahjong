@@ -2925,7 +2925,7 @@ describe('BattleScreen', () => {
       {
         onInvitePlayer,
         currentUserId: 1,
-        inviteHumanUsers: [
+        inviteUsers: [
           {
             user: {
               user_id: 2,
@@ -3041,14 +3041,14 @@ describe('BattleScreen', () => {
     expect(screen.queryByText('上家刚打出可响应牌')).toBeNull();
   });
 
-  it('opens the player list with human and AI tabs', async () => {
+  it('opens the player list without human and AI tabs', async () => {
     const user = userEvent.setup();
 
     renderBattleScreen(createBattleViewModel({
       players: createBattleViewModel().players.slice(0, 3),
     }), {
       onInvitePlayer: vi.fn(),
-      inviteHumanUsers: [
+      inviteUsers: [
         {
           user: {
             user_id: 1,
@@ -3062,19 +3062,16 @@ describe('BattleScreen', () => {
           },
           status: 'online',
         },
-      ],
-      inviteAiUsers: [
         {
           user: {
             user_id: 5,
-            username: 'ai-5',
-            display_name: 'AI 5',
+            username: 'player-b',
+            display_name: 'Player B',
             points: 600,
-            title: 'AI',
-            display_label: 'AI 5 AI',
+            title: '平民',
+            display_label: 'Player B 平民',
             bio: '',
             avatar: null,
-            is_special_bot: true,
           },
           status: 'online',
         },
@@ -3084,10 +3081,10 @@ describe('BattleScreen', () => {
     await user.click(screen.getByRole('button', { name: '打开玩家列表' }));
 
     expect(screen.getByRole('dialog', { name: '玩家列表' })).toBeInTheDocument();
-    expect(screen.getByRole('tab', { name: '人类' })).toHaveAttribute('aria-selected', 'true');
+    expect(screen.queryByRole('tab', { name: '人类' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('tab', { name: 'AI' })).not.toBeInTheDocument();
     expect(screen.getByText('Player A 平民')).toBeInTheDocument();
-    await user.click(screen.getByRole('tab', { name: 'AI' }));
-    expect(screen.getByText('AI 5 AI')).toBeInTheDocument();
+    expect(screen.getByText('Player B 平民')).toBeInTheDocument();
   });
 
 });

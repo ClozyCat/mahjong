@@ -841,8 +841,6 @@ export default function App() {
   });
   const isLocalBotTakeoverEnabled = Boolean(localSeatState?.is_bot);
   const inviteUsers = createInviteDialogUsers(leaderboard, onlineUserIds);
-  const inviteHumanUsers = inviteUsers.filter(({ user }) => !user.is_special_bot);
-  const inviteAiUsers = inviteUsers.filter(({ user }) => user.is_special_bot);
   useSequentialBackgroundMusic(isBgmEnabled && state.roomSnapshot !== null);
 
   useEffect(() => {
@@ -1485,8 +1483,7 @@ export default function App() {
           onToggleBotTakeover={handleSetBotTakeover}
           onToggleAutoPassKong={setIsAutoPassKongEnabled}
           isOwner={isOwner}
-          inviteHumanUsers={inviteHumanUsers}
-          inviteAiUsers={inviteAiUsers}
+          inviteUsers={inviteUsers}
           inviteStatusesByUserId={sentInviteStatusesByUserId}
           pendingInvitePanel={pendingInvitePanel}
           evaluationSession={evaluationSession}

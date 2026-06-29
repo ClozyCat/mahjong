@@ -5,6 +5,8 @@ mod app;
 #[cfg(test)]
 mod bot;
 #[cfg(test)]
+mod bot_config;
+#[cfg(test)]
 mod core;
 #[cfg(test)]
 mod evaluation;
@@ -18,8 +20,6 @@ mod room_scoring;
 mod rules;
 #[cfg(test)]
 mod scoring;
-#[cfg(test)]
-mod special_bots;
 
 use anyhow::Result;
 
@@ -129,10 +129,10 @@ mod tests {
             },
             {
                 "seat_index": 1,
-                "nickname": "舒伯特",
+                "nickname": "Bot 1",
                 "connected": true,
                 "is_bot": true,
-                "seat_type": "special_bot",
+                "seat_type": "bot",
                 "bot_persona": Value::Null,
                 "bot_aggression": Value::Null,
                 "disconnect_deadline_at": Value::Null
@@ -269,29 +269,6 @@ mod tests {
             "connected": true,
             "is_bot": true,
             "seat_type": "bot",
-            "bot_persona": Value::Null,
-            "bot_aggression": Value::Null,
-            "disconnect_deadline_at": Value::Null
-        }],
-            "match_state": null,
-            "round_state": null,
-            "pending_timeout": null
-        }));
-        assert!(room_has_only_bots(&empty_room));
-
-        empty_room = room_state(json!({
-            "table_code": "ROOM42",
-            "phase": "waiting",
-            "mode": "normal",
-            "test_mode": false,
-            "enforce_minimum_eight_fan": true,
-            "continue_action": null,
-            "seats": [{
-            "seat_index": 0,
-            "nickname": "舒伯特",
-            "connected": true,
-            "is_bot": true,
-            "seat_type": "special_bot",
             "bot_persona": Value::Null,
             "bot_aggression": Value::Null,
             "disconnect_deadline_at": Value::Null

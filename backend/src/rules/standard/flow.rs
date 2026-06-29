@@ -891,12 +891,10 @@ mod tests {
 
     #[test]
     fn room_ready_to_start_allows_full_mixed_room() {
-        let mut special_bot = regular_bot_seat(2);
-        special_bot.seat_type = crate::special_bots::SPECIAL_BOT_SEAT_TYPE.to_string();
         let room = ready_room_with_seats(vec![
             seat_state(0),
             regular_bot_seat(1),
-            special_bot,
+            regular_bot_seat(2),
             seat_state(3),
         ]);
 

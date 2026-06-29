@@ -263,7 +263,7 @@ pub(crate) fn choose_neural_claim_decision_with_config_and_rng(
 
 pub(crate) fn bot_policy_config_from_env() -> BotPolicyConfig {
     let model_path = env::var("MAHJONG_BOT_MODEL_PATH")
-        .unwrap_or_else(|_| crate::special_bots::SFT_MODEL_PATH.to_string());
+        .unwrap_or_else(|_| crate::bot_config::SFT_MODEL_PATH.to_string());
     BotPolicyConfig {
         id: "env-neural".to_string(),
         model_path: Some(model_path),

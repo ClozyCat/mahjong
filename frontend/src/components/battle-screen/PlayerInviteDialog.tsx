@@ -1,11 +1,10 @@
 import { createPortal } from 'react-dom';
-import { useMemo, useState } from 'react';
+import { useMemo } from 'react';
 
 import type { PublicUser } from '../../types/match';
 
 export type SentInviteStatus = 'pending' | 'rejected';
 export type PlayerInviteStatus = 'online' | 'playing' | 'offline';
-export type PlayerInviteTab = 'human' | 'ai';
 
 export interface InviteDialogUser {
   user: PublicUser;
@@ -15,8 +14,7 @@ export interface InviteDialogUser {
 interface PlayerInviteDialogProps {
   isOpen: boolean;
   currentUserId?: number | null;
-  humanUsers: InviteDialogUser[];
-  aiUsers: InviteDialogUser[];
+  users: InviteDialogUser[];
   canInvitePlayers: boolean;
   inviteStatusesByUserId: Record<number, SentInviteStatus>;
   onClose: () => void;
@@ -38,17 +36,13 @@ const STATUS_ORDER: Record<PlayerInviteStatus, number> = {
 export function PlayerInviteDialog({
   isOpen,
   currentUserId = null,
-  humanUsers,
-  aiUsers,
+  users,
   canInvitePlayers,
   inviteStatusesByUserId,
   onClose,
   onInvite,
 }: PlayerInviteDialogProps) {
-  const [activeTab, setActiveTab] = useState<PlayerInviteTab>('human');
-  const sortedHumanUsers = useMemo(() => sortInviteUsers(humanUsers), [humanUsers]);
-  const sortedAiUsers = useMemo(() => sortInviteUsers(aiUsers), [aiUsers]);
-  const activeUsers = activeTab === 'human' ? sortedHumanUsers : sortedAiUsers;
+  const sortedUsers = useMemo(() => sortInviteUsers(users), [users]);
 
   if (!isOpen || typeof document === 'undefined') {
     return null;
@@ -60,27 +54,7 @@ export function PlayerInviteDialog({
         <header className="player-list__header">
           <div className="player-list__title-block">
             <span className="player-list__eyebrow">玩家列表</span>
-            <p className="player-list__hint">选择可加入当前牌桌的玩家或 AI。</p>
-          </div>
-          <div className="player-list__tabs" role="tablist" aria-label="玩家列表标签">
-            <button
-              type="button"
-              role="tab"
-              aria-selected={activeTab === 'human'}
-              className={activeTab === 'human' ? 'is-active' : undefined}
-              onClick={() => setActiveTab('human')}
-            >
-              人类
-            </button>
-            <button
-              type="button"
-              role="tab"
-              aria-selected={activeTab === 'ai'}
-              className={activeTab === 'ai' ? 'is-active' : undefined}
-              onClick={() => setActiveTab('ai')}
-            >
-              AI
-            </button>
+            <p className="player-list__hint">选择可加入当前牌桌的玩家。</p>
           </div>
           <button type="button" className="player-list__close" aria-label="关闭玩家列表" onClick={onClose}>
             关闭
@@ -88,11 +62,11 @@ export function PlayerInviteDialog({
         </header>
 
         <div className="player-list__content">
-          {activeUsers.length === 0 ? (
+          {sortedUsers.length === 0 ? (
             <div className="player-list__empty">暂无可显示玩家</div>
           ) : (
             <ul className="player-list__rows">
-              {activeUsers.map(({ user, status }) => (
+              {sortedUsers.map(({ user, status }) => (
                 <PlayerInviteRow
                   key={user.user_id}
                   user={user}

@@ -103,7 +103,7 @@ pub fn default_sft_opponents() -> Vec<BotPolicyConfig> {
     (0..3)
         .map(|index| BotPolicyConfig {
             id: format!("sft-opponent-{}", index + 1),
-            model_path: Some(crate::special_bots::SFT_MODEL_PATH.to_string()),
+            model_path: Some(crate::bot_config::SFT_MODEL_PATH.to_string()),
             sample_actions: false,
             temperature: 1.0,
             temperature_range: None,
@@ -155,7 +155,7 @@ mod tests {
     fn test_policy(id: &str) -> BotPolicyConfig {
         BotPolicyConfig {
             id: id.to_string(),
-            model_path: Some(crate::special_bots::SFT_MODEL_PATH.to_string()),
+            model_path: Some(crate::bot_config::SFT_MODEL_PATH.to_string()),
             sample_actions: false,
             temperature: 1.0,
             temperature_range: None,

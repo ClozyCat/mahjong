@@ -1504,8 +1504,7 @@ fn can_leave_waiting_table(room: &RoomState, leaving_user_id: Option<i64>) -> bo
             return false;
         }
 
-        crate::special_bots::is_independent_bot_seat(seat)
-            || crate::special_bots::is_special_bot_seat(seat)
+        crate::bot_config::is_independent_bot_seat(seat)
             || (seat.seat_type == "human" && seat.user_id.is_some())
     })
 }

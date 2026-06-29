@@ -260,10 +260,6 @@ function getInviteDialogStatus(
   onlineUserIdSet: Set<number>,
   activeTableUserCounts: Map<string, number>,
 ): PlayerInviteStatus {
-  if (user.is_special_bot) {
-    return user.active_table_code ? 'playing' : 'online';
-  }
-
   if (!onlineUserIdSet.has(user.user_id)) {
     return 'offline';
   }

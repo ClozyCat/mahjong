@@ -972,51 +972,6 @@ impl Database {
         })
     }
 
-    fn upsert_special_bot_user(
-        &self,
-        username: &str,
-        display_name: &str,
-        password_hash: &str,
-        updated_at: &str,
-    ) -> Result<UserRecord> {
-        self.with_transaction("upsert special bot user", |conn| {
-            conn.execute(
-                "
-                INSERT INTO users (
-                    username,
-                    display_name,
-                    password_hash,
-                    points,
-                    created_at,
-                    updated_at
-                )
-                VALUES (?1, ?2, ?3, ?4, ?5, ?5)
-                ON CONFLICT(username) DO UPDATE SET
-                    display_name = excluded.display_name,
-                    password_hash = excluded.password_hash,
-                    updated_at = excluded.updated_at
-                ",
-                params![
-                    username,
-                    display_name,
-                    password_hash,
-                    INITIAL_USER_POINTS,
-                    updated_at
-                ],
-            )?;
-            conn.query_row(
-                "
-                SELECT id, username, display_name, password_hash, avatar, bio, points
-                FROM users
-                WHERE username = ?1
-                ",
-                params![username],
-                Self::user_record_from_row,
-            )
-            .map_err(Into::into)
-        })
-    }
-
     fn create_auth_session(&self, token_hash: &str, user_id: i64, created_at: &str) -> Result<()> {
         self.conn.execute(
             "
@@ -2125,23 +2080,6 @@ impl DbWorker {
         let updated_at = updated_at.to_string();
         self.call(move |db| {
             db.upsert_dev_user(&username, &display_name, &password_hash, &updated_at)
-        })
-        .await
-    }
-
-    pub(crate) async fn upsert_special_bot_user(
-        &self,
-        username: &str,
-        display_name: &str,
-        password_hash: &str,
-        updated_at: &str,
-    ) -> Result<UserRecord> {
-        let username = username.to_string();
-        let display_name = display_name.to_string();
-        let password_hash = password_hash.to_string();
-        let updated_at = updated_at.to_string();
-        self.call(move |db| {
-            db.upsert_special_bot_user(&username, &display_name, &password_hash, &updated_at)
         })
         .await
     }

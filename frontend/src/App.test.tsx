@@ -269,7 +269,6 @@ const DEFAULT_PENDING_INVITE = {
 type MockPublicUser = typeof DEFAULT_CURRENT_USER & {
   active_table_code?: string | null;
   active_table_phase?: 'waiting' | 'playing' | 'settlement' | 'finished' | null;
-  is_special_bot?: boolean;
 };
 
 function createMockResponse(body: unknown, status = 200): Response {
@@ -855,14 +854,13 @@ describe('App', () => {
         ...DEFAULT_LEADERBOARD,
         {
           user_id: 9,
-          username: 'bot_schubert',
-          display_name: '舒伯特',
+          username: 'player-c',
+          display_name: 'Player C',
           points: 600,
-          title: 'AI',
-          display_label: '舒伯特 AI',
+          title: '平民',
+          display_label: 'Player C 平民',
           bio: '',
           avatar: null,
-          is_special_bot: true,
         },
       ],
       evaluationResponses: [
@@ -886,8 +884,8 @@ describe('App', () => {
             {
               subject_id: 'user:9',
               user_id: 9,
-              display_name: '舒伯特',
-              kind: 'bot',
+              display_name: 'Player C',
+              kind: 'human',
               table_code: 'EVBOT',
               phase: 'finished',
               completed: true,
@@ -901,10 +899,19 @@ describe('App', () => {
       ],
     });
 
+    await act(async () => {
+      getMeSocket()!.triggerMessage({
+        type: 'user_presence_updated',
+        payload: {
+          online_user_ids: [1, 9],
+        },
+      });
+    });
+
     await user.click(screen.getByRole('button', { name: '展开牌桌快捷设置' }));
     await user.click(screen.getByRole('button', { name: '技术评测' }));
     const dialog = await screen.findByRole('dialog', { name: '创建评测' });
-    await user.click(within(dialog).getByLabelText(/舒伯特/));
+    await user.click(within(dialog).getByLabelText(/Player C/));
     await user.click(within(dialog).getByRole('button', { name: '开始评测' }));
 
     const createEvaluationCall = findFetchCall(fetchMock, '/api/evaluations', 'POST');
@@ -925,7 +932,7 @@ describe('App', () => {
       { type: 'start_match', payload: {} },
     ]);
     expect(screen.getByText('当前玩家')).toBeInTheDocument();
-    expect(screen.getByText('舒伯特')).toBeInTheDocument();
+    expect(screen.getByText('Player C')).toBeInTheDocument();
     expect(screen.getByText('16 局')).toBeInTheDocument();
     expect(screen.queryByRole('button', { name: 'EVBOT' })).not.toBeInTheDocument();
 

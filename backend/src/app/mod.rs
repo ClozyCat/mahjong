@@ -96,7 +96,6 @@ pub(crate) struct AppState {
     pub(crate) db: DbWorker,
     pub(crate) rooms: RwLock<HashMap<String, Arc<RoomHandle>>>,
     pub(crate) user_connections: RwLock<HashMap<i64, HashMap<u64, ConnectionHandle>>>,
-    pub(crate) special_bot_user_ids: RwLock<HashSet<i64>>,
     pub(crate) evaluation_sessions:
         RwLock<HashMap<String, self::evaluation::EvaluationSessionResponse>>,
 }
@@ -109,7 +108,6 @@ impl AppContext {
                 db,
                 rooms: RwLock::new(HashMap::new()),
                 user_connections: RwLock::new(HashMap::new()),
-                special_bot_user_ids: RwLock::new(HashSet::new()),
                 evaluation_sessions: RwLock::new(HashMap::new()),
             }),
         }
@@ -414,7 +412,7 @@ pub(crate) fn add_bot_to_waiting_room(room: &mut RoomState) -> Result<usize, &'s
 }
 
 fn is_standalone_bot_seat(seat: &SeatState) -> bool {
-    crate::special_bots::is_independent_bot_seat(seat)
+    crate::bot_config::is_independent_bot_seat(seat)
 }
 
 pub(crate) fn remove_bot_from_waiting_room(room: &mut RoomState) -> Result<usize, &'static str> {
@@ -760,7 +758,7 @@ pub(crate) async fn register_user_connection(
     user_id: i64,
     connection: ConnectionHandle,
 ) {
-    let (mut online_user_ids, handles) = {
+    let (online_user_ids, handles) = {
         let mut registry = state.inner.user_connections.write().await;
         registry
             .entry(user_id)
@@ -768,15 +766,6 @@ pub(crate) async fn register_user_connection(
             .insert(connection.id, connection);
         snapshot_user_connections_registry(&registry)
     };
-    online_user_ids.extend(
-        state
-            .inner
-            .special_bot_user_ids
-            .read()
-            .await
-            .iter()
-            .copied(),
-    );
     let payload = user_presence_updated_message(online_user_ids);
     send_outbound(
         handles
@@ -791,7 +780,7 @@ pub(crate) async fn unregister_user_connection(
     user_id: i64,
     connection_id: u64,
 ) {
-    let (mut online_user_ids, handles) = {
+    let (online_user_ids, handles) = {
         let mut registry = state.inner.user_connections.write().await;
         if let Some(connections) = registry.get_mut(&user_id) {
             connections.remove(&connection_id);
@@ -801,15 +790,6 @@ pub(crate) async fn unregister_user_connection(
         }
         snapshot_user_connections_registry(&registry)
     };
-    online_user_ids.extend(
-        state
-            .inner
-            .special_bot_user_ids
-            .read()
-            .await
-            .iter()
-            .copied(),
-    );
     let payload = user_presence_updated_message(online_user_ids);
     send_outbound(
         handles
@@ -861,15 +841,6 @@ where
 pub(crate) async fn online_user_ids(state: &AppContext) -> Vec<i64> {
     let registry = state.inner.user_connections.read().await;
     let mut user_ids = registry.keys().copied().collect::<Vec<_>>();
-    user_ids.extend(
-        state
-            .inner
-            .special_bot_user_ids
-            .read()
-            .await
-            .iter()
-            .copied(),
-    );
     user_ids.sort_unstable();
     user_ids.dedup();
     user_ids

@@ -744,7 +744,7 @@ describe('TableStage', () => {
     expect(rightSeatLabel).toHaveTextContent('B');
   });
 
-  it('adds titles to player info names except for normal bots', () => {
+  it('adds titles to player info names except for bots', () => {
     const { container } = render(
       <TableStage
         discards={{
@@ -759,14 +759,14 @@ describe('TableStage', () => {
         players={[
           { seat: 'bottom', name: '小A', title: 'Lv.15', seatType: 'human', melds: [] },
           { seat: 'right', name: 'bot_1', title: '👑', seatType: 'bot', melds: [] },
-          { seat: 'top', name: '舒伯特', title: '👑', seatType: 'special_bot', melds: [] },
+          { seat: 'top', name: 'Player B', title: '👑', seatType: 'human', melds: [] },
         ]}
       />,
     );
 
     expect(container.querySelector('.table-stage__stat-plate--seat[data-player-name="小A-Lv.15"]')).not.toBeNull();
     expect(container.querySelector('.table-stage__stat-plate--seat[data-player-name="bot_1"]')).not.toBeNull();
-    expect(container.querySelector('.table-stage__stat-plate--seat[data-player-name="舒伯特-👑"]')).not.toBeNull();
+    expect(container.querySelector('.table-stage__stat-plate--seat[data-player-name="Player B-👑"]')).not.toBeNull();
   });
 
   it('shows player introduction nameplates only until the first player action', () => {

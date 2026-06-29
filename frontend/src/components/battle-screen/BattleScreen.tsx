@@ -54,8 +54,7 @@ interface BattleScreenProps {
   onToggleVoice?: () => void;
   onToggleBotTakeover?: (enabled: boolean) => void;
   onToggleAutoPassKong?: (enabled: boolean) => void;
-  inviteHumanUsers?: InviteDialogUser[];
-  inviteAiUsers?: InviteDialogUser[];
+  inviteUsers?: InviteDialogUser[];
   currentUserId?: number | null;
   inviteStatusesByUserId?: Record<number, SentInviteStatus>;
   pendingInvitePanel?: ReactNode;
@@ -99,8 +98,7 @@ export function BattleScreen({
   onToggleBotTakeover,
   onToggleAutoPassKong,
   currentUserId = null,
-  inviteHumanUsers = [],
-  inviteAiUsers = [],
+  inviteUsers = [],
   inviteStatusesByUserId = {},
   pendingInvitePanel = null,
   evaluationSession = null,
@@ -519,8 +517,7 @@ export function BattleScreen({
           <PlayerInviteDialog
             isOpen={isInviteDialogOpen}
             currentUserId={currentUserId}
-            humanUsers={inviteHumanUsers}
-            aiUsers={inviteAiUsers}
+            users={inviteUsers}
             canInvitePlayers={canInvitePlayers}
             inviteStatusesByUserId={inviteStatusesByUserId}
             onClose={() => setIsInviteDialogOpen(false)}
@@ -529,8 +526,7 @@ export function BattleScreen({
           <EvaluationDialog
             isOpen={isEvaluationDialogOpen}
             currentUserId={currentUserId}
-            humanUsers={inviteHumanUsers}
-            aiUsers={inviteAiUsers}
+            users={inviteUsers}
             selectedUserIds={evaluationSubjectUserIds}
             isSubmitting={isEvaluationSubmitting}
             onToggleSubject={handleToggleEvaluationSubject}

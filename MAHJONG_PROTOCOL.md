@@ -407,7 +407,7 @@
 
 ### 1. 房间状态与阶段定义
 *   **`RoomPhase`**: `"waiting"` (大厅等待) | `"playing"` (激战中) | `"settlement"` (局后结算) | `"finished"` (整场比赛结束)
-*   **`SeatType`**: `"human"` (人类玩家) | `"bot"` (普通AI) | `"special_bot"` (特殊设定AI)
+*   **`SeatType`**: `"human"` (人类玩家) | `"bot"` (AI)
 
 ### 2. 简写牌名对应表 (`tile_key` / `code`)
 所有的牌面标识用字符串形式，采用 **数字 + 拼音首字母** 的形式：

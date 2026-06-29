@@ -16,6 +16,7 @@ use crate::app::{
     room_has_round_state, room_seats, send_outbound, serialize_room, sleep_until,
     timeout_auto_response_seats, user_active_table_updated_message,
 };
+use crate::bot_config;
 use crate::core::engine::try_handle_player_action_in_room_state;
 use crate::rules::standard::actions::apply_discard_action_output_in_room_state;
 use crate::rules::standard::automation::{
@@ -29,7 +30,6 @@ use crate::rules::standard::flow::{
     start_match_in_room_state as standard_start_match,
 };
 use crate::rules::standard::win::apply_hu_action_output_in_room_state;
-use crate::special_bots;
 
 const UNATTENDED_ROOM_CLEANUP_DELAY: Duration = Duration::from_secs(180);
 
@@ -393,7 +393,7 @@ async fn process_due_bot_action(state: AppContext, table_code: String, expected_
     }
 
     let action = match standard_next_bot_action(&runtime.room, &|seat_index| {
-        special_bots::policy_config_for_seat(&runtime.room, seat_index)
+        bot_config::policy_config_for_seat(&runtime.room, seat_index)
     }) {
         Ok(action) => action,
         Err(_) => return,
@@ -612,7 +612,7 @@ pub(crate) async fn schedule_room_tasks(state: AppContext, table_code: String) {
     }
 
     if standard_next_bot_action(&runtime.room, &|seat_index| {
-        special_bots::policy_config_for_seat(&runtime.room, seat_index)
+        bot_config::policy_config_for_seat(&runtime.room, seat_index)
     })
     .ok()
     .flatten()

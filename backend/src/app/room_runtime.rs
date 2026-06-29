@@ -11,9 +11,9 @@ use crate::app::scheduler::schedule_room_tasks;
 use crate::app::{
     AppContext, ConnectionHandle, OutboundMessage, parse_room_json, serialize_room_state,
 };
+use crate::bot_config::is_independent_bot_seat;
 use crate::core::state::RoomState;
 use crate::rules::standard::flow::reconcile_continue_action_state_in_room_state as reconcile_standard_continue_action_state;
-use crate::special_bots::{is_independent_bot_seat, is_special_bot_seat};
 
 pub(crate) type SeatConnections = Vec<(usize, ConnectionHandle)>;
 pub(crate) struct RoomHandle {
@@ -206,7 +206,7 @@ pub(crate) async fn unregister_room_handle(
 
 pub(crate) fn mark_restored_room_disconnected(room: &mut RoomState) {
     for seat in &mut room.seats {
-        if is_independent_bot_seat(seat) || is_special_bot_seat(seat) {
+        if is_independent_bot_seat(seat) {
             continue;
         }
         seat.connected = false;
@@ -365,11 +365,7 @@ pub(crate) fn snapshot_connections(runtime: &RoomRuntime) -> SeatConnections {
 }
 
 pub(crate) fn room_has_only_bots(room: &RoomState) -> bool {
-    !room.seats.is_empty()
-        && room
-            .seats
-            .iter()
-            .all(|seat| is_independent_bot_seat(seat) || is_special_bot_seat(seat))
+    !room.seats.is_empty() && room.seats.iter().all(is_independent_bot_seat)
 }
 
 pub(crate) fn should_terminate_unattended(runtime: &RoomRuntime) -> bool {
