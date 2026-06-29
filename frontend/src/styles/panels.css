@@ -3195,6 +3195,119 @@
 }
 
 /* ==============================
+   Leave table confirm dialog
+   ============================== */
+
+.leave-table-confirm__backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 44;
+  display: grid;
+  place-items: center;
+  padding:
+    max(0.75rem, env(safe-area-inset-top)) max(0.75rem, env(safe-area-inset-right)) max(0.75rem, env(safe-area-inset-bottom)) max(0.75rem, env(safe-area-inset-left));
+  background: color-mix(in srgb, var(--theme-veil) 48%, transparent);
+  animation: modal-backdrop-fade 0.22s var(--ease-lux) forwards;
+}
+
+.leave-table-confirm__dialog {
+  width: min(25rem, calc(100vw - 1.5rem));
+  display: grid;
+  gap: 1rem;
+  padding: 1.25rem;
+  border: 1.5px solid color-mix(in srgb, var(--theme-paper) 13%, transparent);
+  border-radius: 1.1rem;
+  background:
+    radial-gradient(circle at top left, color-mix(in srgb, var(--theme-danger) 18%, transparent), transparent 55%),
+    rgba(12, 12, 12, 0.92);
+  color: var(--theme-paper-strong);
+  box-shadow: 0 28px 72px rgba(0, 0, 0, 0.52);
+  backdrop-filter: blur(28px) saturate(118%);
+  animation: modal-scale-in 0.22s var(--ease-lux) forwards;
+}
+
+.leave-table-confirm__mark {
+  display: inline-grid;
+  place-items: center;
+  width: 3rem;
+  height: 3rem;
+  border: 1px solid color-mix(in srgb, var(--theme-danger) 35%, transparent);
+  border-radius: 0.8rem;
+  background: color-mix(in srgb, var(--theme-danger) 13%, rgba(0, 0, 0, 0.3));
+  color: color-mix(in srgb, var(--theme-danger) 84%, var(--theme-paper-strong));
+}
+
+.leave-table-confirm__copy {
+  display: grid;
+  gap: 0.3rem;
+}
+
+.leave-table-confirm__eyebrow {
+  color: color-mix(in srgb, var(--theme-paper) 58%, var(--accent-2));
+  font-size: 0.78rem;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+}
+
+.leave-table-confirm__copy h2,
+.leave-table-confirm__copy p {
+  margin: 0;
+}
+
+.leave-table-confirm__copy h2 {
+  font-size: 1.22rem;
+  line-height: 1.2;
+}
+
+.leave-table-confirm__copy p {
+  color: color-mix(in srgb, var(--theme-paper) 66%, var(--accent-3));
+  font-size: 0.9rem;
+  line-height: 1.6;
+}
+
+.leave-table-confirm__actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 0.65rem;
+}
+
+.leave-table-confirm__actions button {
+  min-height: 2.35rem;
+  padding: 0.52rem 1rem;
+  border-radius: 0.65rem;
+  font-weight: 800;
+  cursor: pointer;
+  transition: background-color 0.16s var(--ease-lux), border-color 0.16s var(--ease-lux), transform 0.16s var(--ease-lux);
+}
+
+.leave-table-confirm__cancel {
+  border: 1px solid color-mix(in srgb, var(--theme-paper) 14%, transparent);
+  background: color-mix(in srgb, var(--theme-paper) 6%, transparent);
+  color: var(--theme-paper-strong);
+}
+
+.leave-table-confirm__confirm {
+  border: 1px solid color-mix(in srgb, var(--theme-danger) 55%, transparent);
+  background: color-mix(in srgb, var(--theme-danger) 38%, rgba(0, 0, 0, 0.28));
+  color: var(--theme-paper-strong);
+}
+
+.leave-table-confirm__cancel:hover,
+.leave-table-confirm__confirm:hover {
+  transform: translateY(-1px);
+}
+
+.leave-table-confirm__cancel:hover {
+  border-color: color-mix(in srgb, var(--theme-paper) 26%, transparent);
+  background: color-mix(in srgb, var(--theme-paper) 11%, transparent);
+}
+
+.leave-table-confirm__confirm:hover {
+  border-color: color-mix(in srgb, var(--theme-danger) 72%, transparent);
+  background: color-mix(in srgb, var(--theme-danger) 48%, rgba(0, 0, 0, 0.2));
+}
+
+/* ==============================
    Responsive & Overrides
    ============================== */
 

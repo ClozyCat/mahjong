@@ -21,6 +21,7 @@ import {
 } from './PlayerInviteDialog';
 import { EvaluationDialog } from './EvaluationDialog';
 import { EvaluationPanel } from './EvaluationPanel';
+import { LeaveTableConfirmDialog } from './LeaveTableConfirmDialog';
 import type { EvaluationSessionResponse } from '../../types/match';
 
 interface BattleScreenProps {
@@ -112,6 +113,7 @@ export function BattleScreen({
   const [isSnakeActive, setIsSnakeActive] = useState(false);
   const [isInviteDialogOpen, setIsInviteDialogOpen] = useState(false);
   const [isEvaluationDialogOpen, setIsEvaluationDialogOpen] = useState(false);
+  const [isLeaveConfirmOpen, setIsLeaveConfirmOpen] = useState(false);
   const [evaluationSubjectUserIds, setEvaluationSubjectUserIds] = useState<number[]>([]);
   const consumedActionEffectKeyRef = useRef<string | null>(viewModel.actionEffect?.key ?? null);
   const consumedActionEffectRef = useRef(viewModel.actionEffect);
@@ -187,6 +189,11 @@ export function BattleScreen({
   async function handleCreateEvaluation() {
     await onCreateEvaluation?.(evaluationSubjectUserIds);
     setIsEvaluationDialogOpen(false);
+  }
+
+  function handleConfirmLeaveTable() {
+    setIsLeaveConfirmOpen(false);
+    onLeaveTable();
   }
 
   const handleRevealComplete = useCallback(() => {
@@ -465,7 +472,7 @@ export function BattleScreen({
               canLeaveTable={viewModel.canLeaveTable}
               themeId={themeId}
               themeLabel={themeLabel}
-              onLeaveTable={onLeaveTable}
+              onLeaveTable={() => setIsLeaveConfirmOpen(true)}
               onOpenInviteDialog={onInvitePlayer ? () => setIsInviteDialogOpen(true) : undefined}
               onCycleTheme={onCycleTheme}
               onAction={handleAction}
@@ -536,6 +543,12 @@ export function BattleScreen({
           <EvaluationPanel
             session={evaluationSession}
             onRefresh={onRefreshEvaluation}
+          />
+          <LeaveTableConfirmDialog
+            isOpen={isLeaveConfirmOpen}
+            tableCode={viewModel.tableCode}
+            onCancel={() => setIsLeaveConfirmOpen(false)}
+            onConfirm={handleConfirmLeaveTable}
           />
           {pendingInvitePanel}
           {isSnakeActive && <SnakeOverlay onGameOver={() => setTimeout(() => setIsSnakeActive(false), 2000)} />}

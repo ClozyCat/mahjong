@@ -2958,7 +2958,7 @@ describe('BattleScreen', () => {
     expect(screen.queryByLabelText(/local melds/i)).toBeNull();
   });
 
-  it('shows a leave-table button in waiting rooms and wires the callback', async () => {
+  it('asks for confirmation before leaving a waiting room', async () => {
     const user = userEvent.setup();
     const onLeaveTable = vi.fn();
 
@@ -2985,7 +2985,43 @@ describe('BattleScreen', () => {
     expect(screen.queryByText('等待牌手')).toBeNull();
     await user.click(quickLeaveButton);
 
+    const dialog = screen.getByRole('dialog', { name: '确认离席' });
+
+    expect(dialog).toHaveTextContent('离开牌桌 AB12CD 后，需要重新加入才能回到本桌。');
+    expect(onLeaveTable).not.toHaveBeenCalled();
+
+    await user.click(within(dialog).getByRole('button', { name: '确认离席' }));
+
     expect(onLeaveTable).toHaveBeenCalledTimes(1);
+    expect(screen.queryByRole('dialog', { name: '确认离席' })).toBeNull();
+  });
+
+  it('keeps the player seated when leave-table confirmation is cancelled', async () => {
+    const user = userEvent.setup();
+    const onLeaveTable = vi.fn();
+
+    renderBattleScreen(
+      createBattleViewModel({
+        canLeaveTable: true,
+        mode: 'disconnected_or_waiting',
+        phaseLabel: 'waiting',
+        waitingControls: {
+          ...waitingControlDefaults,
+          canStart: false,
+          occupiedSeats: 2,
+          botCount: 0,
+          canAddBot: true,
+          canRemoveBot: false,
+        },
+      }),
+      { onLeaveTable },
+    );
+
+    await user.click(screen.getByRole('button', { name: '快捷离开牌桌' }));
+    await user.click(screen.getByRole('button', { name: '取消' }));
+
+    expect(onLeaveTable).not.toHaveBeenCalled();
+    expect(screen.queryByRole('dialog', { name: '确认离席' })).toBeNull();
   });
 
   it('hides the pre-match room menu after the game has started', () => {
