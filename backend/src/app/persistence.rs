@@ -11,7 +11,7 @@ use tokio::sync::oneshot;
 
 use super::auth::AuthenticatedUser;
 
-const INITIAL_USER_POINTS: i64 = 600;
+const INITIAL_USER_POINTS: i64 = 1000;
 
 type DbTask = Box<dyn FnOnce(&Database) + Send + 'static>;
 
@@ -322,7 +322,7 @@ impl Database {
                 password_hash TEXT NOT NULL,
                 avatar TEXT,
                 bio TEXT NOT NULL DEFAULT '',
-                points INTEGER NOT NULL DEFAULT 600,
+                points INTEGER NOT NULL DEFAULT 1000,
                 last_login_local_date TEXT,
                 created_at TEXT NOT NULL,
                 updated_at TEXT NOT NULL

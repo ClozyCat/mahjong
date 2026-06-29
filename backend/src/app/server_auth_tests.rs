@@ -113,7 +113,7 @@ async fn register_creates_user_and_session_and_me_can_update_display_name() -> R
         .as_str()
         .expect("register should return a session token");
     assert_eq!(register_body["user"]["display_name"], "Alice");
-    assert_eq!(register_body["user"]["points"], 600);
+    assert_eq!(register_body["user"]["points"], 1000);
 
     let me_response = app
         .clone()
@@ -236,7 +236,7 @@ async fn login_does_not_award_daily_points() -> Result<()> {
         .await?;
     assert_eq!(first_login.status(), StatusCode::OK);
     let first_body = json_response(first_login).await;
-    assert_eq!(first_body["user"]["points"], 600);
+    assert_eq!(first_body["user"]["points"], 1000);
 
     let second_login = app
         .oneshot(json_request(
@@ -250,7 +250,7 @@ async fn login_does_not_award_daily_points() -> Result<()> {
         .await?;
     assert_eq!(second_login.status(), StatusCode::OK);
     let second_body = json_response(second_login).await;
-    assert_eq!(second_body["user"]["points"], 600);
+    assert_eq!(second_body["user"]["points"], 1000);
     Ok(())
 }
 
