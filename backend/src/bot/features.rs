@@ -662,6 +662,7 @@ mod global_features_tests {
             pending_timeout: Some(PendingTimeout {
                 kind: "active_turn".to_string(),
                 seat_index: 0,
+                extra_time_seat: None,
                 deadline_at: None,
                 drawn_tile_id: Some("tile#123".to_string()),
                 extended_with_extra: false,

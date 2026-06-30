@@ -2629,6 +2629,7 @@ mod tests {
             pending_timeout: Some(PendingTimeout {
                 kind: "active_turn".to_string(),
                 seat_index: 0,
+                extra_time_seat: None,
                 deadline_at: None,
                 drawn_tile_id: Some("east#discard".to_string()),
                 extended_with_extra: false,
@@ -2767,6 +2768,7 @@ mod tests {
         room.pending_timeout = Some(PendingTimeout {
             kind: "claim_window".to_string(),
             seat_index: 0,
+            extra_time_seat: None,
             deadline_at: None,
             drawn_tile_id: None,
             extended_with_extra: false,
@@ -2815,6 +2817,7 @@ mod tests {
         room.pending_timeout = Some(PendingTimeout {
             kind: "active_turn".to_string(),
             seat_index: 0,
+            extra_time_seat: None,
             deadline_at: None,
             drawn_tile_id: Some("w3#0d".to_string()),
             extended_with_extra: false,

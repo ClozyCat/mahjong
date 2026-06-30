@@ -12,6 +12,7 @@ use super::{seat_vec, string_opt, usize_opt};
 pub struct PendingTimeout {
     pub kind: String,
     pub seat_index: Seat,
+    pub extra_time_seat: Option<Seat>,
     pub deadline_at: Option<String>,
     pub drawn_tile_id: Option<TileId>,
     #[serde(default)]
@@ -31,6 +32,7 @@ impl PendingTimeout {
                 .and_then(Value::as_u64)
                 .map(|value| value as Seat)
                 .unwrap_or(0),
+            extra_time_seat: usize_opt(value, "extra_time_seat"),
             deadline_at: string_opt(value, "deadline_at"),
             drawn_tile_id: string_opt(value, "drawn_tile_id"),
             extended_with_extra: value

@@ -413,6 +413,7 @@ pub(crate) fn maybe_start_player_multiplier_selection(room: &mut RoomState) {
     room.pending_timeout = Some(PendingTimeout {
         kind: "player_multiplier_selection".to_string(),
         seat_index: round.current_actor,
+        extra_time_seat: None,
         deadline_at: Some(player_multiplier_selection_deadline_iso()),
         drawn_tile_id: None,
         extended_with_extra: false,
@@ -981,6 +982,7 @@ mod tests {
             pending_timeout: Some(PendingTimeout {
                 kind: "active_turn".to_string(),
                 seat_index: 0,
+                extra_time_seat: None,
                 deadline_at: None,
                 drawn_tile_id: Some("f1#0".to_string()),
                 extended_with_extra: false,

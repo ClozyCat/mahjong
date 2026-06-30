@@ -229,7 +229,9 @@ pub fn build_pending_action_view(
         .find(|player| player.seat == local_seat);
     let is_local_ready_hand = local_player.is_some_and(|player| player.is_ready_hand);
 
-    let extra_time_seat = pending_timeout_extra_time_seat(state);
+    let extra_time_seat = pending_timeout
+        .extra_time_seat
+        .unwrap_or_else(|| pending_timeout_extra_time_seat(state));
     let remaining_extra_time = state
         .match_state
         .as_ref()
@@ -976,6 +978,7 @@ mod tests {
             pending_timeout: Some(PendingTimeout {
                 kind: "active_turn".to_string(),
                 seat_index: 0,
+                extra_time_seat: None,
                 deadline_at: Some("2026-04-20T12:00:30.000Z".to_string()),
                 drawn_tile_id: Some("w3#draw".to_string()),
                 extended_with_extra: false,
@@ -1025,6 +1028,7 @@ mod tests {
             pending_timeout: Some(PendingTimeout {
                 kind: "active_turn".to_string(),
                 seat_index: 0,
+                extra_time_seat: None,
                 deadline_at: Some("2026-04-20T12:00:30.000Z".to_string()),
                 drawn_tile_id: Some("w3#draw".to_string()),
                 extended_with_extra: false,
@@ -1075,6 +1079,7 @@ mod tests {
             pending_timeout: Some(PendingTimeout {
                 kind: "active_turn".to_string(),
                 seat_index: 0,
+                extra_time_seat: None,
                 deadline_at: Some("2026-04-20T12:00:30.000Z".to_string()),
                 drawn_tile_id: Some("w3#draw".to_string()),
                 extended_with_extra: false,
@@ -1137,6 +1142,7 @@ mod tests {
             pending_timeout: Some(PendingTimeout {
                 kind: "claim_window".to_string(),
                 seat_index: 1,
+                extra_time_seat: None,
                 deadline_at: Some("2026-04-20T12:00:30.000Z".to_string()),
                 drawn_tile_id: None,
                 extended_with_extra: false,
@@ -1201,6 +1207,7 @@ mod tests {
             pending_timeout: Some(PendingTimeout {
                 kind: "claim_window".to_string(),
                 seat_index: 1,
+                extra_time_seat: None,
                 deadline_at: Some("2026-04-20T12:00:30.000Z".to_string()),
                 drawn_tile_id: None,
                 extended_with_extra: false,
@@ -1253,6 +1260,7 @@ mod tests {
             pending_timeout: Some(PendingTimeout {
                 kind: "claim_window".to_string(),
                 seat_index: 1,
+                extra_time_seat: None,
                 deadline_at: Some("2026-04-20T12:00:30.000Z".to_string()),
                 drawn_tile_id: None,
                 extended_with_extra: false,
@@ -1306,6 +1314,7 @@ mod tests {
             pending_timeout: Some(PendingTimeout {
                 kind: "claim_window".to_string(),
                 seat_index: 1,
+                extra_time_seat: None,
                 deadline_at: Some("2026-04-20T12:00:30.000Z".to_string()),
                 drawn_tile_id: None,
                 extended_with_extra: false,
@@ -1368,6 +1377,7 @@ mod tests {
             pending_timeout: Some(PendingTimeout {
                 kind: "claim_window".to_string(),
                 seat_index: 0,
+                extra_time_seat: None,
                 deadline_at: Some("2026-04-20T12:00:30.000Z".to_string()),
                 drawn_tile_id: None,
                 extended_with_extra: false,
@@ -1425,6 +1435,7 @@ mod tests {
             pending_timeout: Some(PendingTimeout {
                 kind: "rob_kong_window".to_string(),
                 seat_index: 0,
+                extra_time_seat: None,
                 deadline_at: Some("2026-04-20T12:00:30.000Z".to_string()),
                 drawn_tile_id: None,
                 extended_with_extra: false,

@@ -71,7 +71,10 @@ pub fn try_process_due_timeout_in_room_state(
         "player_multiplier_selection" => pending_timeout.seat_index,
         _ => return Ok(None),
     };
-    let timeout_seat = pending_timeout_extra_time_seat(room).unwrap_or(fallback_timeout_seat);
+    let timeout_seat = pending_timeout
+        .extra_time_seat
+        .or_else(|| pending_timeout_extra_time_seat(room))
+        .unwrap_or(fallback_timeout_seat);
     if !seat_is_bot(room, timeout_seat) {
         if let Some(match_state) = room.match_state.as_mut() {
             let extra = match_state
@@ -85,6 +88,7 @@ pub fn try_process_due_timeout_in_room_state(
                     .to_rfc3339_opts(chrono::SecondsFormat::Millis, true);
                 if let Some(ref mut pt) = room.pending_timeout {
                     pt.deadline_at = Some(new_deadline);
+                    pt.extra_time_seat = Some(timeout_seat);
                     pt.extended_with_extra = true;
                 }
                 match_state.extra_time_pool.insert(timeout_seat, 0);

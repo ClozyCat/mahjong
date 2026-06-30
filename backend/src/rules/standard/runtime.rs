@@ -32,7 +32,10 @@ fn refund_unused_extra_time(room: &mut RoomState) {
             Ok(dt) => dt.into(),
             Err(_) => return,
         };
-    let seat = pending_timeout_extra_time_seat(room).unwrap_or(pending_timeout.seat_index);
+    let seat = pending_timeout
+        .extra_time_seat
+        .or_else(|| pending_timeout_extra_time_seat(room))
+        .unwrap_or(pending_timeout.seat_index);
     let match_state = match room.match_state.as_mut() {
         Some(s) => s,
         None => return,
@@ -324,5 +327,72 @@ mod tests {
             .extra_time_pool;
         assert_eq!(extra_time_pool.get(&1), Some(&0));
         assert!(extra_time_pool.get(&0).copied().unwrap_or(0) > 0);
+    }
+
+    #[test]
+    fn refund_uses_timeout_owner_after_turn_advances() {
+        let future_deadline = (Utc::now() + chrono::TimeDelta::seconds(30))
+            .to_rfc3339_opts(chrono::SecondsFormat::Millis, true);
+        let mut room = RoomState::from_room_value(&json!({
+            "table_code": "ROOM42",
+            "phase": "playing",
+            "mode": "normal",
+            "test_mode": false,
+            "enforce_minimum_eight_fan": true,
+            "seats": [],
+            "match_state": {
+                "prevailing_wind": "east",
+                "hand_number": 1,
+                "dealer_seat": 0,
+                "cumulative_scores": {"0": 0, "1": 0, "2": 0, "3": 0},
+                "match_finished": false,
+                "last_completed_round_id": null,
+                "extra_time_pool": {"0": 0, "1": 0, "2": 0, "3": 0}
+            },
+            "round_state": {
+                "round_id": "round-1",
+                "dealer_seat": 0,
+                "current_actor": 1,
+                "wall": {"tiles": [], "head_index": 0, "tail_index": 0},
+                "players": [],
+                "last_discard": null,
+                "pending_action": null,
+                "phase": "playing",
+                "settlement": null,
+                "version": 1,
+                "score_trackers": {"kong_entries": []},
+                "last_action_context": {
+                    "kind": "draw",
+                    "seat": 1,
+                    "tile_id": null,
+                    "from_kong_replacement": false,
+                    "was_last_live_tile": false,
+                    "was_last_discard": false
+                },
+                "round_wind": "east",
+                "enforce_minimum_eight_fan": true,
+                "restricted_discard_tile_key": null
+            },
+            "pending_timeout": {
+                "kind": "active_turn",
+                "seat_index": 0,
+                "extra_time_seat": 0,
+                "deadline_at": future_deadline,
+                "drawn_tile_id": null,
+                "extended_with_extra": true
+            },
+            "continue_action": null
+        }))
+        .expect("room should parse");
+
+        sync_pending_timeout_in_room_state(&mut room);
+
+        let extra_time_pool = &room
+            .match_state
+            .as_ref()
+            .expect("match should exist")
+            .extra_time_pool;
+        assert!(extra_time_pool.get(&0).copied().unwrap_or(0) > 0);
+        assert_eq!(extra_time_pool.get(&1), Some(&0));
     }
 }

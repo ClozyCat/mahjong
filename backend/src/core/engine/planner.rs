@@ -5,7 +5,7 @@ use serde_json::{Value, json};
 use crate::core::state::{
     ClaimResponse, ClaimWindowAction, LastActionContext, PendingAction, PendingTimeout,
     PlayerRoundState, RobKongWindowAction, RoomState, RoundScoreTrackers, RoundSettlement,
-    RoundState, RuleRuntimeState, WallState,
+    RoundState, RuleRuntimeState, WallState, pending_action_response_seat,
 };
 use crate::core::tile::Tile;
 
@@ -148,6 +148,7 @@ pub fn plan_round_start_payload(
     let pending_timeout = PendingTimeout {
         kind: "active_turn".to_string(),
         seat_index: current_actor,
+        extra_time_seat: Some(current_actor),
         deadline_at: Some(deadline_iso()),
         drawn_tile_id: round_state.last_action_context.tile_id.clone(),
         extended_with_extra: false,
@@ -216,16 +217,18 @@ pub fn compute_pending_timeout_value(
         return None;
     };
     match round.pending_action.as_ref() {
-        Some(PendingAction::ClaimWindow(claim)) => Some(PendingTimeout {
+        Some(pending @ PendingAction::ClaimWindow(claim)) => Some(PendingTimeout {
             kind: "claim_window".to_string(),
             seat_index: claim.discarder_seat,
+            extra_time_seat: pending_action_response_seat(pending),
             deadline_at: Some(deadline_at),
             drawn_tile_id: None,
             extended_with_extra: false,
         }),
-        Some(PendingAction::RobKongWindow(rob)) => Some(PendingTimeout {
+        Some(pending @ PendingAction::RobKongWindow(rob)) => Some(PendingTimeout {
             kind: "claim_window".to_string(),
             seat_index: rob.actor_seat,
+            extra_time_seat: pending_action_response_seat(pending),
             deadline_at: Some(deadline_at),
             drawn_tile_id: None,
             extended_with_extra: false,
@@ -233,6 +236,7 @@ pub fn compute_pending_timeout_value(
         Some(PendingAction::PlayerMultiplierSelection(_)) => Some(PendingTimeout {
             kind: "player_multiplier_selection".to_string(),
             seat_index: round.current_actor,
+            extra_time_seat: None,
             deadline_at: Some(deadline_at),
             drawn_tile_id: None,
             extended_with_extra: false,
@@ -240,6 +244,7 @@ pub fn compute_pending_timeout_value(
         _ => Some(PendingTimeout {
             kind: "active_turn".to_string(),
             seat_index: round.current_actor,
+            extra_time_seat: Some(round.current_actor),
             deadline_at: Some(deadline_at),
             drawn_tile_id: active_turn_drawn_tile_id(state, round.current_actor),
             extended_with_extra: false,
