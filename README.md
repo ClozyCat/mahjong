@@ -15,6 +15,24 @@
 - 番种说明、声音反馈、主题和适配横屏牌桌的响应式界面
 - Docker Compose 源码构建与单机部署
 
+## Linux 一键 Docker 部署
+
+支持 Debian、Ubuntu 和 CentOS。脚本会检查 Docker Engine 与 Compose v2，交互式选择对外端口和 `MAHJONG_DATA_DIR`，创建数据目录并构建、启动服务；依赖缺失时会显示对应系统的安装命令。
+
+在准备存放项目的目录中运行以下一键部署命令：
+
+```bash
+git clone --depth 1 https://github.com/ClozyCat/mahjong.git && cd mahjong && bash scripts/deploy-docker.sh
+```
+
+按照提示输入端口和专用的数据目录，直接回车会使用当前 `.env` 中的值；首次部署默认为端口 `80` 和目录 `/opt/mahjong-data`。部署完成后访问 `http://服务器IP:所选端口`。
+
+生产环境默认没有账号。部署后执行以下命令生成一次性邀请码：
+
+```bash
+docker compose exec backendmj backend admin create-invite --count 5
+```
+
 ## 技术栈
 
 | 模块 | 技术 |
@@ -52,7 +70,7 @@ mahjong/
 |   `-- src/                    # API、WebSocket、持久化和麻将核心逻辑
 |-- frontend/                   # React 前端、测试、麻将牌和声音资源
 |-- docker/                     # Nginx 配置和后端容器入口脚本
-|-- scripts/                    # 本地开发启动脚本
+|-- scripts/                    # Linux 部署与本地开发启动脚本
 |-- docker-compose.yml          # 从源码构建并运行
 |-- Dockerfile                  # 前后端多阶段镜像构建
 `-- MAHJONG_PROTOCOL.md         # 牌桌 WebSocket 协议说明
@@ -169,6 +187,8 @@ npm run dev -- --host 127.0.0.1 --port 5173
 ## Docker Compose 部署
 
 这是最简单的完整部署方式，适合单机、小规模内网或公网服务。需要 Docker Engine 和 Compose v2；生产环境建议使用 Linux 主机。
+
+Debian、Ubuntu 或 CentOS 用户可优先使用前文的 `bash scripts/deploy-docker.sh` 一键部署。以下步骤适用于需要手动配置的场景。
 
 ### 1. 准备配置和数据目录
 
@@ -373,4 +393,3 @@ docker compose exec backendmj backend admin create-invite --count 1
 ```
 
 然后使用输出的邀请码注册。
-
