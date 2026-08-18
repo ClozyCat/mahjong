@@ -1,164 +1,103 @@
-# Debian 13 Docker 部署 SOP
+# Debian Docker 部署 SOP
 
-本文档对应当前仓库根目录下的 `Dockerfile`、`docker-compose.yml` 与 `docker-compose.prebuilt.yml`。
-
-推荐优先使用“本地构建镜像包，服务器直接加载”的方案。这样前端 `npm build` 和后端 `cargo build --release` 都在本地机器执行，服务器只负责加载镜像并启动容器，更新速度会快很多。
+本文档说明如何在 Debian 服务器上直接从源码构建并运行项目。服务器负责执行前端 `npm run build` 和后端 `cargo build --release`，无需在开发电脑生成或传输构建产物。
 
 部署拓扑：
 
-- `frontend`：`nginx` 容器，负责提供前端静态文件，并反向代理 `/api` 和 `/ws`
-- `backend`：Rust `axum` 容器
-- `MAHJONG_DATA_DIR`：宿主机数据目录，挂载到后端容器 `/data`，用于持久化 SQLite 数据库文件；生产环境建议设置到外部硬盘路径
+- `frontendmj`：Nginx 容器，提供前端静态文件并反向代理 `/api` 和 `/ws`
+- `backendmj`：Rust/Axum 容器，提供 HTTP API 与 WebSocket 服务
+- `MAHJONG_DATA_DIR`：宿主机数据目录，挂载到后端容器 `/data`，持久化 SQLite 数据库
 
-## 1. 服务器准备
+## 1. 准备服务器
 
-在 Debian 13 上安装 Docker 与 Compose 插件：
+安装 Git、Docker Engine 和 Compose v2：
 
 ```bash
 sudo apt update
-sudo apt install -y docker.io docker-compose-v2
+sudo apt install -y git docker.io docker-compose-v2
 sudo systemctl enable --now docker
-sudo usermod -aG docker $USER
+sudo usermod -aG docker "$USER"
 newgrp docker
 docker version
 docker compose version
 ```
 
-如果你的系统里 `docker-compose-v2` 包名不存在，也可以安装 `docker-compose-plugin`。
+如果系统软件源中没有 `docker-compose-v2`，请按照 Docker 官方文档安装 Compose 插件。
 
-## 2. 推荐方案：本地构建镜像包，服务器直接部署
+建议只开放 SSH、HTTP 和 HTTPS 端口。后端 `8000` 端口只在 Docker 网络内使用，不需要向公网暴露。
 
-这个方案尤其适合你当前这种“服务器编译太慢”的情况。
-
-### 2.1 本地构建部署包
-
-在本地项目根目录执行：
-
-```powershell
-.\scripts\build-prebuilt-bundle.ps1 -Tag 2026-04-07
-```
-
-默认会做这些事情：
-
-- 在本地使用 Docker Buildx 构建 Linux `amd64` 镜像
-- 生成 `mahjong-backend:<tag>` 和 `mahjong-frontend:<tag>`
-- 导出镜像包到 `output/deploy/<tag>/mahjong-images.tar`
-- 同时复制部署用的 `docker-compose.yml` 和 `.env.example`
-
-生成目录示例：
-
-```text
-output/deploy/2026-04-07/
-  |- docker-compose.yml
-  |- .env.example
-  |- mahjong-images.tar
-  |- README.txt
-```
-
-说明：
-
-- 如果你的服务器不是 `amd64`，可以改成对应平台，例如 `-Platform linux/arm64`
-- 这种方式即使你本机是 Windows，也能正确产出 Debian 服务器可运行的 Linux 镜像
-
-### 2.2 上传部署包到服务器
-
-把部署包目录上传到服务器，例如：
+## 2. 在服务器获取代码
 
 ```bash
-scp -r ./output/deploy/2026-04-07 user@your-server:/opt/mahjong
+sudo mkdir -p /opt/mahjong
+sudo chown -R "$USER:$USER" /opt/mahjong
+git clone https://github.com/ClozyCat/mahjong.git /opt/mahjong/app
+cd /opt/mahjong/app
 ```
 
-然后登录服务器：
+正式部署前建议检出经过验证的版本标签或提交，而不是未经测试的开发提交。
 
-```bash
-ssh user@your-server
-cd /opt/mahjong/2026-04-07
-```
+## 3. 配置环境变量和数据目录
 
-### 2.3 初始化配置
-
-复制环境变量模板：
+复制配置模板：
 
 ```bash
 cp .env.example .env
 ```
 
-默认配置已经可直接运行：
-
-- 前端对外端口：`80`
-- 数据库：`sqlite+pysqlite:////data/mahjong.db`
-- 数据目录：`/opt/mahjong-data`
-- 后端镜像：`mahjong-backend:latest`
-- 前端镜像：`mahjong-frontend:latest`
-
-如果你使用了自定义标签，记得同步修改 `.env`：
+按需编辑 `.env`：
 
 ```env
-APP_PORT=8080
+COMPOSE_PROJECT_NAME=mahjong_gb
+APP_PORT=80
 MAHJONG_DATABASE_URL=sqlite+pysqlite:////data/mahjong.db
-MAHJONG_DATA_DIR=/mnt/external-disk/mahjong-data
-BACKEND_IMAGE=mahjong-backend:2026-04-07
-FRONTEND_IMAGE=mahjong-frontend:2026-04-07
+MAHJONG_DATA_DIR=/opt/mahjong-data
+ONNXRUNTIME_VERSION=1.24.2
+MAHJONG_BOT_MODEL_PATH=/app/assets/sft/sft.onnx
 ```
 
-`MAHJONG_DATA_DIR` 是宿主机路径。正式部署时建议把它指向外部硬盘内的目录，并在启动前创建好：
+关键配置说明：
+
+- `APP_PORT` 是浏览器访问的宿主机端口。
+- `MAHJONG_DATA_DIR` 是服务器上的持久化目录，不是容器内路径。
+- `MAHJONG_DATABASE_URL` 默认指向容器内 `/data/mahjong.db`。
+- 当前持久化层只支持 SQLite。
+- `.env` 已被 Git 忽略，不要将生产配置提交到仓库。
+
+创建数据目录：
 
 ```bash
-sudo mkdir -p /mnt/external-disk/mahjong-data
-sudo chown -R $USER:$USER /mnt/external-disk/mahjong-data
-```
-
-如果暂时不用外部硬盘，可以保留默认的 `/opt/mahjong-data`：
-
-```bash
-sudo mkdir -p /opt/mahjong-data
-sudo chown -R $USER:$USER /opt/mahjong-data
-```
-
-注意：SQLite 依赖文件锁，`MAHJONG_DATA_DIR` 建议使用本机直连硬盘目录，避免放到不可靠的网络共享目录。
-
-如果服务器上已经用旧版 Docker 命名卷部署过，首次切换到外部硬盘目录前需要迁移旧数据库：
-
-```bash
-set -a; [ -f .env ] && . ./.env; set +a
-docker compose down
+set -a; . ./.env; set +a
 sudo mkdir -p "${MAHJONG_DATA_DIR:-/opt/mahjong-data}"
-sudo chown -R $USER:$USER "${MAHJONG_DATA_DIR:-/opt/mahjong-data}"
-docker run --rm \
-  -v mahjong_mahjong-data:/from:ro \
-  -v "${MAHJONG_DATA_DIR:-/opt/mahjong-data}:/to" \
-  alpine sh -c 'test ! -f /from/mahjong.db || cp /from/mahjong.db /to/mahjong.db'
-docker compose up -d
+sudo chown -R "$USER:$USER" "${MAHJONG_DATA_DIR:-/opt/mahjong-data}"
 ```
 
-如果旧部署使用了不同的 `COMPOSE_PROJECT_NAME`，把 `mahjong_mahjong-data` 改成对应的旧卷名。可以用 `docker volume ls` 查看。
+SQLite 依赖文件锁。数据目录应位于服务器本机磁盘，避免使用文件锁不可靠的网络共享目录。
 
-### 2.4 首次部署
+## 4. 构建并启动
 
-先把镜像加载到服务器 Docker：
+在服务器项目目录执行：
 
 ```bash
-docker load -i mahjong-images.tar
+cd /opt/mahjong/app
+docker compose up -d --build
 ```
 
-再启动服务：
+首次构建需要下载 Node.js、Rust、系统依赖和 ONNX Runtime，耗时取决于服务器性能与网络状况。
 
-```bash
-docker compose up -d
-```
-
-查看状态：
+查看容器状态：
 
 ```bash
 docker compose ps
-docker compose logs -f backendmj
-docker compose logs -f frontendmj
+docker compose logs --tail=100 backendmj
+docker compose logs --tail=100 frontendmj
 ```
 
-验证接口：
+健康检查：
 
 ```bash
-curl http://127.0.0.1:${APP_PORT:-80}/api/health
+set -a; . ./.env; set +a
+curl "http://127.0.0.1:${APP_PORT:-80}/api/health"
 ```
 
 预期返回：
@@ -167,116 +106,115 @@ curl http://127.0.0.1:${APP_PORT:-80}/api/health
 {"status":"ok"}
 ```
 
-浏览器访问：
+## 5. 初始化邀请码
 
-```text
-http://你的服务器IP:端口
-```
-
-### 2.4.1 初始化邀请码与首批账号
-
-当前版本启动后，首页会先进入登录 / 邀请码注册界面，不再支持普通用户手动输入房间号直接入桌。
-
-管理员需要先在服务器上生成邀请码：
+生产环境默认不会创建开发账号。首次启动后生成一次性邀请码：
 
 ```bash
 docker compose exec backendmj backend admin create-invite --count 5
 ```
 
-命令会直接输出 5 个一次性邀请码。把这些邀请码发给首批玩家后，玩家即可在前端使用“邀请码注册”创建账号并自动登录。
+命令会直接输出邀请码并写入当前数据库。玩家可在首页通过“邀请码注册”创建账号。
 
-如果你使用的是预构建镜像方案，上面的命令同样适用；它执行的是容器内的 `backend` 二进制，不依赖本机安装 Rust。
+## 6. 首次业务验证
 
-### 2.4.2 首次业务验证
+部署完成后至少验证以下流程：
 
-建议在首次部署后至少走完一次当前真实业务流程：
+1. 使用邀请码注册并登录。
+2. 创建牌桌并加入机器人。
+3. 使用另一个账号接受邀请并进入牌桌。
+4. 完成开局、出牌、响应、结算和下一局流程。
+5. 刷新浏览器，确认登录会话与牌桌可以恢复。
+6. 重启容器，确认数据库和未结束牌桌可以恢复。
 
-1. 使用邀请码注册第一个账号并登录
-2. 创建牌桌，确认牌局默认 `x1`，且不显示倍数选择
-3. 使用第二个邀请码注册第二个账号，确认能在牌桌侧栏收到邀请提示并进入牌局
-4. 开局后确认仍不显示倍数选择
-5. 打开牌桌右侧侧栏，确认只显示牌局、消息、所有玩家入口
-
-### 2.5 日常更新 SOP
-
-后续每次代码更新，按下面流程执行：
-
-1. 本地重新执行 `.\scripts\build-prebuilt-bundle.ps1 -Tag 新版本号`
-2. 上传新的 `output/deploy/新版本号` 目录到服务器
-3. 在服务器进入新目录后执行：
+浏览器无法连接时，检查：
 
 ```bash
-docker load -i mahjong-images.tar
-docker compose up -d
+docker compose ps
+docker compose logs --tail=200 backendmj
+docker compose logs --tail=200 frontendmj
 ```
 
-这种更新方式不会重新在服务器上编译 Rust 和前端资源，速度通常会明显快于 `docker compose up -d --build`。
+## 7. 更新
 
-## 3. 备份
-
-在更新前，建议先导出一份数据库文件，避免异常时无法回退：
+更新前先备份数据库：
 
 ```bash
-set -a; [ -f .env ] && . ./.env; set +a
+cd /opt/mahjong/app
+set -a; . ./.env; set +a
 mkdir -p backups
 cp "${MAHJONG_DATA_DIR:-/opt/mahjong-data}/mahjong.db" \
   "backups/mahjong-$(date +%F-%H%M%S).db"
 ```
 
-如果 `.env` 中把 `MAHJONG_DATA_DIR` 设置到了外部硬盘路径，上面的命令会直接读取该路径。
-
-## 4. 验证
+拉取代码并在服务器重新构建：
 
 ```bash
+git status --short
+git pull --ff-only
+docker compose up -d --build
 docker compose ps
-curl http://127.0.0.1:${APP_PORT:-80}/api/health
-docker compose logs --tail=100 backendmj
+curl "http://127.0.0.1:${APP_PORT:-80}/api/health"
 ```
 
-如果页面可打开、健康检查正常、日志没有报错，再补充确认下面这些用户侧功能：
+若 `git status --short` 显示本机源码改动，应先确认这些改动的归属，不要直接覆盖。
 
-1. 首页默认显示登录 / 邀请码注册，而不是房间号加入入口
-2. 注册成功后直接进入牌桌界面，并可在侧栏创建牌桌
-3. 牌局只能通过邀请进入
-4. 打开牌桌侧栏，确认只保留牌局、消息、所有玩家入口
-
-## 5. 回滚 SOP
-
-如果新版本异常：
-
-1. 切回上一个可用的部署目录
-2. 如有必要，先恢复数据库备份
-3. 重新执行：
+构建成功后可清理不再使用的 Docker 构建缓存：
 
 ```bash
+docker builder prune
+```
+
+该命令只应在确认旧构建缓存不再需要时执行。
+
+## 8. 备份与恢复
+
+建议定期把数据库备份到另一块磁盘或独立备份系统，并实际演练恢复。
+
+备份：
+
+```bash
+cd /opt/mahjong/app
+set -a; . ./.env; set +a
+mkdir -p backups
+cp "${MAHJONG_DATA_DIR:-/opt/mahjong-data}/mahjong.db" \
+  "backups/mahjong-$(date +%F-%H%M%S).db"
+```
+
+恢复：
+
+```bash
+cd /opt/mahjong/app
+set -a; . ./.env; set +a
+docker compose down
+cp backups/mahjong-YYYY-MM-DD-HHMMSS.db \
+  "${MAHJONG_DATA_DIR:-/opt/mahjong-data}/mahjong.db"
 docker compose up -d
 ```
 
-恢复数据库示例：
+恢复后应重新检查健康接口，并用测试账号确认登录、战绩和牌桌数据。
+
+## 9. 回滚
+
+新版本异常时：
+
+1. 记录当前失败版本和日志。
+2. 停止服务并恢复升级前的数据库备份。
+3. 在服务器检出上一个验证过的标签或提交。
+4. 重新构建并启动容器。
+
+示例：
 
 ```bash
 docker compose down
-set -a; [ -f .env ] && . ./.env; set +a
-cp backups/mahjong-YYYY-MM-DD-HHMMSS.db "${MAHJONG_DATA_DIR:-/opt/mahjong-data}/mahjong.db"
-docker compose up -d
-```
-
-## 6. 兼容方案：仍然在服务器源码构建
-
-如果你暂时不想走镜像包分发，也可以继续上传整个项目目录，然后在服务器执行：
-
-```bash
+git switch --detach <已验证的标签或提交>
 docker compose up -d --build
+docker compose ps
 ```
 
-但这个方案会在服务器上执行：
+回滚验证完成后，再决定是否让服务器分支指向旧版本。不要在未备份数据库时进行跨版本反复切换。
 
-- 前端 `npm ci` 和 `npm run build`
-- 后端 `cargo build --release`
-
-所以速度会明显慢于推荐方案。
-
-## 7. 常用运维命令
+## 10. 常用运维命令
 
 启动：
 
@@ -300,7 +238,7 @@ docker compose logs -f frontendmj
 查看数据库文件：
 
 ```bash
-set -a; [ -f .env ] && . ./.env; set +a
+set -a; . ./.env; set +a
 ls -lh "${MAHJONG_DATA_DIR:-/opt/mahjong-data}/mahjong.db"
 ```
 
@@ -310,17 +248,15 @@ ls -lh "${MAHJONG_DATA_DIR:-/opt/mahjong-data}/mahjong.db"
 docker compose exec backendmj sh
 ```
 
-## 8. 可选增强
+## 11. 公网部署建议
 
-如果要正式对公网开放，建议再补一层：
+正式对公网开放时，建议在 Compose 服务外增加支持 WebSocket 的 HTTPS 反向代理，并完成以下配置：
 
-- 域名
-- HTTPS 证书
-- 外层反向代理（如 Caddy、Nginx Proxy Manager、Traefik）
-- 基础防火墙策略
+- 域名和 TLS 证书
+- `/api` 普通 HTTP 请求转发
+- `/ws` WebSocket Upgrade 转发
+- 防火墙与 SSH 访问限制
+- 日志轮转、服务监控和磁盘空间告警
+- 独立于应用服务器的数据库备份
 
-当前这套配置适合：
-
-- 单机部署
-- 小规模内网/公网试玩
-- 以 SQLite 持久化为主的轻量运维场景
+外层代理只需转发到 `APP_PORT` 暴露的 Nginx，不应直接转发到后端容器。

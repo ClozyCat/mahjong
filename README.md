@@ -13,7 +13,7 @@
 - 对局记录、个人战绩、排行榜和积分变更记录
 - 基于 ONNX 模型的机器人决策
 - 番种说明、声音反馈、主题和适配横屏牌桌的响应式界面
-- Docker Compose 源码构建与离线镜像包部署
+- Docker Compose 源码构建与单机部署
 
 ## 技术栈
 
@@ -52,9 +52,8 @@ mahjong/
 |   `-- src/                    # API、WebSocket、持久化和麻将核心逻辑
 |-- frontend/                   # React 前端、测试、麻将牌和声音资源
 |-- docker/                     # Nginx 配置和后端容器入口脚本
-|-- scripts/                    # 开发启动与离线 Docker 镜像包脚本
+|-- scripts/                    # 本地开发启动脚本
 |-- docker-compose.yml          # 从源码构建并运行
-|-- docker-compose.prebuilt.yml # 使用已构建镜像运行
 |-- Dockerfile                  # 前后端多阶段镜像构建
 |-- MAHJONG_PROTOCOL.md         # 牌桌 WebSocket 协议说明
 `-- DEPLOYMENT_SOP.md           # Debian Docker 部署与运维细节
@@ -234,34 +233,6 @@ docker compose down
 
 更完整的 Debian 部署、迁移、验证和回滚步骤见 [DEPLOYMENT_SOP.md](DEPLOYMENT_SOP.md)。
 
-## 离线镜像包部署
-
-服务器编译速度慢或无法稳定访问依赖源时，可以在装有 Docker Buildx 的本机生成 Linux 镜像包：
-
-```powershell
-.\scripts\build-prebuilt-bundle.ps1 -Tag 2026-08-18
-```
-
-默认输出到：
-
-```text
-output/deploy/2026-08-18/
-|-- .env.example
-|-- docker-compose.yml
-|-- mahjong-images.tar
-`-- README.txt
-```
-
-服务器是 ARM64 时增加 `-Platform linux/arm64`。将整个目录上传到服务器后执行：
-
-```bash
-cp .env.example .env
-docker load -i mahjong-images.tar
-docker compose up -d
-```
-
-镜像名称和标签由生成脚本写入包内的 `.env.example`，一般不需要手动修改。
-
 ## 不使用 Docker 的单进程部署
 
 后端可以直接托管构建后的前端目录，适合熟悉进程守护和反向代理的用户：
@@ -292,8 +263,6 @@ cargo run --release --manifest-path backend/Cargo.toml --bin backend
 | `MAHJONG_DATABASE_URL` | `sqlite+pysqlite:////data/mahjong.db` | 容器内数据库文件位置 |
 | `MAHJONG_BOT_MODEL_PATH` | `/app/assets/sft/sft.onnx` | 容器内 ONNX 模型位置 |
 | `ONNXRUNTIME_VERSION` | `1.24.2` | Docker 构建时下载的 ONNX Runtime 版本 |
-| `BACKEND_IMAGE` | `mahjong-backend:latest` | 仅供预构建 Compose 使用 |
-| `FRONTEND_IMAGE` | `mahjong-frontend:latest` | 仅供预构建 Compose 使用 |
 
 当前持久化层只支持 SQLite。`MAHJONG_DATABASE_URL` 同时接受 `sqlite:///...`、`sqlite+pysqlite:///...` 或普通文件路径；它不是通用 SQLAlchemy 数据库连接串。
 
