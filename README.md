@@ -1,16 +1,16 @@
-# 国标麻将听多响炮版
+# 国标麻将DIY版
 
-一个可自行部署的四人在线国标麻将项目。前端使用 React，后端使用 Rust/Axum，通过 HTTP API 和 WebSocket 提供账号、牌桌、实时对局、战绩与社交功能；对局数据保存在 SQLite 中，并可加载仓库内附带的 ONNX 模型驱动机器人。
+一个可自行部署的四人在线国标麻将项目。前端使用 React，后端使用 Rust/Axum，通过 HTTP API 和 WebSocket 提供账号、牌桌、实时对局、分数记录与社交功能；对局数据保存在 SQLite 中，并可加载仓库内附带的 ONNX 模型驱动机器人。相比正式国标麻将，该版本麻将允许同时多人和牌，允许听牌（听牌加2番），不允许诈和，可自行设置起和番数（0、2、4、6、8番），可自行设置连庄、分数倍数，并提供竞技场功能，竞技场内每位玩家将获得完全一致的对局环境，用于公平比较玩家水平。
 
-> 项目仍在持续开发中。若用于公开服务，请先在测试环境验证规则、计分、数据备份和升级流程。
+> 项目为国标麻将业余爱好者vibe coding产出，麻将规则上可能存在错误、疏忽。
 
 ## 主要功能
 
 - 邀请码注册、账号登录和会话管理
 - 四人实时牌桌、断线重连和服务重启后的牌桌恢复
-- 国标麻将牌局流程、番种计算、结算与多响炮
+- 国标麻将牌局流程、番种计算、结算
 - 创建牌桌、邀请玩家、机器人补位和多项牌桌规则设置
-- 对局记录、个人战绩、排行榜和积分变更记录
+- 排行榜和积分变更记录
 - 基于 ONNX 模型的机器人决策
 - 番种说明、声音反馈、主题和适配横屏牌桌的响应式界面
 - Docker Compose 源码构建与单机部署
@@ -55,8 +55,7 @@ mahjong/
 |-- scripts/                    # 本地开发启动脚本
 |-- docker-compose.yml          # 从源码构建并运行
 |-- Dockerfile                  # 前后端多阶段镜像构建
-|-- MAHJONG_PROTOCOL.md         # 牌桌 WebSocket 协议说明
-`-- DEPLOYMENT_SOP.md           # Debian Docker 部署与运维细节
+`-- MAHJONG_PROTOCOL.md         # 牌桌 WebSocket 协议说明
 ```
 
 ## 快速开始：Windows 本地开发
@@ -229,10 +228,6 @@ docker compose up -d --build
 docker compose down
 ```
 
-不要在未备份时删除 `MAHJONG_DATA_DIR`，也不要随意使用 `docker compose down -v`。
-
-更完整的 Debian 部署、迁移、验证和回滚步骤见 [DEPLOYMENT_SOP.md](DEPLOYMENT_SOP.md)。
-
 ## 不使用 Docker 的单进程部署
 
 后端可以直接托管构建后的前端目录，适合熟悉进程守护和反向代理的用户：
@@ -292,7 +287,7 @@ Vite 变量在构建时写入静态文件，修改后需要重新执行 `npm run
 
 ## 数据、备份与恢复
 
-Docker 部署的数据文件默认位于宿主机 `/opt/mahjong-data/mahjong.db`。SQLite 依赖文件锁，建议使用本机磁盘，不要把数据库放在不可靠的网络共享目录。
+Docker 部署的数据文件默认位于宿主机 `/opt/mahjong-data/mahjong.db`。
 
 备份前先读取 `.env`，然后复制数据库：
 
@@ -312,7 +307,6 @@ cp backups/mahjong-YYYY-MM-DD-HHMMSS.db \
 docker compose up -d
 ```
 
-升级代码或镜像前应先备份数据库，并保留至少一个已验证可用的旧版本镜像。
 
 ## 测试与代码质量
 
@@ -340,13 +334,12 @@ cargo test --locked
 cargo build --release --locked
 ```
 
-规则、状态机和协议改动应同时补充后端测试；组件、会话状态或视图模型改动应补充 Vitest 测试。
 
 ## 机器人模型与训练代码
 
-运行时模型位于 `backend/assets/sft/`，由后端通过 ONNX Runtime 加载。没有模型或模型加载失败时，应先查看后端日志确认机器人策略是否回退以及具体错误。
+运行时模型位于 `backend/assets/sft/`，由后端通过 ONNX Runtime 加载。可查看后端日志确认机器人策略是否回退以及具体错误。
 
-`backend/bot_trainer/v2/sft/` 保存数据集解析、训练、测试和 ONNX 导出代码。这部分属于进阶开发流程，需要 Python、PyTorch、NumPy、ONNX/ONNX Runtime 等额外依赖；仓库目前没有锁定 Python 训练环境，因此在复现实验前建议自行建立虚拟环境并记录依赖版本。不要将训练检查点、临时数据集或本机虚拟环境提交到仓库。
+`backend/bot_trainer/v2/sft/` 保存数据集解析、训练、测试和 ONNX 导出代码。这部分需要 Python、PyTorch、NumPy、ONNX/ONNX Runtime 等额外依赖；仓库目前没有锁定 Python 训练环境，因此在复现实验前建议自行建立虚拟环境并记录依赖版本。
 
 ## 协议与二次开发
 
@@ -357,17 +350,6 @@ cargo build --release --locked
 - 前端连接生命周期和状态归并位于 `frontend/src/app/`、`frontend/src/lib/`。
 - 牌桌组件位于 `frontend/src/components/battle-screen/`。
 
-修改实时协议时，建议按以下顺序进行：先更新后端领域事件和投影，再更新协议文档与前端类型，最后补充后端和前端的兼容性测试。不要让客户端直接推导隐藏牌、牌墙或其他私有状态。
-
-## 生产部署检查清单
-
-- 使用外层反向代理启用 HTTPS，并确认 WebSocket Upgrade 正常转发。
-- 只向公网暴露前端代理端口，不直接暴露后端容器端口。
-- 不设置 `MAHJONG_DEV_DEFAULT_*` 开发账号变量。
-- 不提交 `.env`、数据库、日志、训练检查点或用户数据。
-- 定期备份 SQLite 数据库，并实际演练恢复流程。
-- 更新前执行测试，并在非生产数据库上走完注册、邀请、开局、结算和重连流程。
-- 根据部署规模配置防火墙、访问日志、监控和备份保留策略。
 
 ## 常见问题
 
@@ -394,14 +376,3 @@ docker compose exec backendmj backend admin create-invite --count 1
 
 然后使用输出的邀请码注册。
 
-### 修改前端环境变量后没有生效
-
-`VITE_*` 是构建时变量。重新构建前端或 Docker 镜像，并清理浏览器缓存后再验证。
-
-## 贡献
-
-提交改动前，请确保相关测试通过，并尽量让提交聚焦于单一问题。涉及规则或计分的变更应附带可复现牌例；涉及协议的变更应同步更新 `MAHJONG_PROTOCOL.md`；涉及数据库结构的变更应考虑旧数据库迁移与回滚。
-
-## 许可证
-
-当前仓库尚未附带开源许可证。公开仓库只表示代码可被查看，并不自动授予复制、修改或分发权。仓库所有者应在正式公开前选择并添加合适的 `LICENSE`；其他用户在许可证明确前请先联系仓库所有者取得授权。
