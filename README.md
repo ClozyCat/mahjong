@@ -186,8 +186,6 @@ MAHJONG_DATA_DIR=/opt/mahjong-data
 MAHJONG_DATABASE_URL=sqlite+pysqlite:////data/mahjong.db
 ```
 
-`.env` 包含本机部署配置，已被 Git 忽略，不应提交。
-
 ### 2. 构建并启动
 
 ```bash
