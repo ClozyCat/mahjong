@@ -1,4 +1,7 @@
 output/
+.env
+.env.*
+!.env.example
 .playwright-cli
 backend/target/
 backend/__pycache__/

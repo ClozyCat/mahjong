@@ -151,8 +151,8 @@ docker compose up -d
 
 ```bash
 docker compose ps
-docker compose logs -f backend
-docker compose logs -f frontend
+docker compose logs -f backendmj
+docker compose logs -f frontendmj
 ```
 
 验证接口：
@@ -180,7 +180,7 @@ http://你的服务器IP:端口
 管理员需要先在服务器上生成邀请码：
 
 ```bash
-docker compose exec backend backend admin create-invite --count 5
+docker compose exec backendmj backend admin create-invite --count 5
 ```
 
 命令会直接输出 5 个一次性邀请码。把这些邀请码发给首批玩家后，玩家即可在前端使用“邀请码注册”创建账号并自动登录。
@@ -230,7 +230,7 @@ cp "${MAHJONG_DATA_DIR:-/opt/mahjong-data}/mahjong.db" \
 ```bash
 docker compose ps
 curl http://127.0.0.1:${APP_PORT:-80}/api/health
-docker compose logs --tail=100 backend
+docker compose logs --tail=100 backendmj
 ```
 
 如果页面可打开、健康检查正常、日志没有报错，再补充确认下面这些用户侧功能：
@@ -293,8 +293,8 @@ docker compose down
 查看日志：
 
 ```bash
-docker compose logs -f backend
-docker compose logs -f frontend
+docker compose logs -f backendmj
+docker compose logs -f frontendmj
 ```
 
 查看数据库文件：
@@ -307,7 +307,7 @@ ls -lh "${MAHJONG_DATA_DIR:-/opt/mahjong-data}/mahjong.db"
 进入后端容器：
 
 ```bash
-docker compose exec backend sh
+docker compose exec backendmj sh
 ```
 
 ## 8. 可选增强
