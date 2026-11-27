@@ -1,12 +1,13 @@
 {
-  "created_at_utc": "2026-06-26T23:12:32.591389+00:00",
+  "created_at_utc": "2026-11-27T07:14:26.088043+00:00",
   "onnx": "backend/assets/sft/sft.onnx",
-  "checkpoint": "backend/bot_trainer/v2/sft/checkpoints/best.pt",
+  "checkpoint": "backend/bot_trainer/v2/sft/checkpoints_v3/best_discard_top1.pt",
   "model_config": {
-    "tile_plane_count": 10,
-    "scalar_feature_count": 13,
+    "tile_plane_count": 24,
+    "scalar_feature_count": 18,
     "discard_sequence_length": 32,
-    "discard_event_feature_count": 40
+    "discard_event_feature_count": 40,
+    "channels": 96
   },
   "outputs": [
     "discard_logits",
