@@ -1,8 +1,7 @@
-use std::collections::BTreeMap;
 use std::fs::{self, File};
 use std::io::{BufWriter, Write};
 use std::path::{Path, PathBuf};
-use std::sync::{Arc, mpsc};
+use std::sync::mpsc;
 use std::thread;
 use std::time::Instant;
 
@@ -69,7 +68,14 @@ struct ProcessedDatasets2Match {
     source: String,
     match_counted: bool,
     split: Option<DatasetSplit>,
-    samples: Result<Vec<super::super::replay::TrainingDecisionSampleV2>, String>,
+    serialized: Result<SerializedDatasets2Samples, String>,
+}
+
+struct SerializedDatasets2Samples {
+    jsonl_bytes: Vec<u8>,
+    sample_count: usize,
+    non_winner_sample_count: usize,
+    runtime_illegal_label_count: usize,
 }
 
 fn process_files(
@@ -79,60 +85,52 @@ fn process_files(
 ) -> Result<(), ExportError> {
     if worker_count <= 1 || paths.len() <= 1 {
         for path in paths {
-            visit(process_one_file(path)?)?;
+            visit(process_one_file(&path)?)?;
         }
         return Ok(());
     }
 
-    let total = paths.len();
-    let paths = Arc::new(paths);
-    let workers = worker_count.min(total);
-    let (sender, receiver) =
-        mpsc::channel::<(usize, Result<ProcessedDatasets2Match, ExportError>)>();
-    let mut handles = Vec::with_capacity(workers);
-    for worker_index in 0..workers {
-        let paths = Arc::clone(&paths);
-        let sender = sender.clone();
-        handles.push(thread::spawn(move || {
-            let mut index = worker_index;
-            while index < paths.len() {
-                let processed = process_one_file(paths[index].clone());
-                if sender.send((index, processed)).is_err() {
-                    return;
-                }
-                index += workers;
+    let workers = worker_count.min(paths.len());
+    // 按有界批次并行执行文件解析 + replay + JSON 序列化，避免内存积压
+    let chunk_size = (workers * 16).max(64);
+    for chunk in paths.chunks(chunk_size) {
+        let mut results: Vec<Option<Result<ProcessedDatasets2Match, ExportError>>> =
+            (0..chunk.len()).map(|_| None).collect();
+        let active_workers = workers.min(chunk.len());
+        let (sender, receiver) =
+            mpsc::channel::<(usize, Result<ProcessedDatasets2Match, ExportError>)>();
+        thread::scope(|scope| {
+            for worker_index in 0..active_workers {
+                let sender = sender.clone();
+                scope.spawn(move || {
+                    let mut index = worker_index;
+                    while index < chunk.len() {
+                        let processed = process_one_file(&chunk[index]);
+                        if sender.send((index, processed)).is_err() {
+                            return;
+                        }
+                        index += active_workers;
+                    }
+                });
             }
-        }));
-    }
-    drop(sender);
-
-    let mut pending = BTreeMap::<usize, Result<ProcessedDatasets2Match, ExportError>>::new();
-    let mut next_index = 0_usize;
-    for (index, processed) in receiver {
-        pending.insert(index, processed);
-        while let Some(processed) = pending.remove(&next_index) {
+            drop(sender);
+            for (index, processed) in receiver {
+                results[index] = Some(processed);
+            }
+        });
+        for item in results {
+            let processed = item.ok_or_else(|| {
+                ExportError::Replay("missing datasets2 worker result".to_string())
+            })?;
             visit(processed?)?;
-            next_index += 1;
         }
-    }
-    for handle in handles {
-        if handle.join().is_err() {
-            return Err(ExportError::Replay(
-                "datasets2 export worker panicked".to_string(),
-            ));
-        }
-    }
-    if next_index != total {
-        return Err(ExportError::Replay(
-            "missing datasets2 worker result".to_string(),
-        ));
     }
     Ok(())
 }
 
-fn process_one_file(path: PathBuf) -> Result<ProcessedDatasets2Match, ExportError> {
+fn process_one_file(path: &Path) -> Result<ProcessedDatasets2Match, ExportError> {
     let source = path.display().to_string();
-    let raw = fs::read_to_string(&path)?;
+    let raw = fs::read_to_string(path)?;
     let record = match parse_match_text(&raw, &source) {
         Ok(record) => record,
         Err(error) => {
@@ -140,20 +138,45 @@ fn process_one_file(path: PathBuf) -> Result<ProcessedDatasets2Match, ExportErro
                 source,
                 match_counted: false,
                 split: None,
-                samples: Err(error),
+                serialized: Err(error),
             });
         }
     };
     let split = split_for_match_id(&record.match_id);
-    let samples = match replay_match_to_samples(&record) {
-        Ok(samples) => Ok(samples),
-        Err(error) => Err(error.to_string()),
-    };
+    let serialized = replay_match_to_samples(&record)
+        .map_err(|error| error.to_string())
+        .and_then(|samples| {
+            let mut jsonl_bytes = Vec::with_capacity(samples.len().saturating_mul(2048));
+            let mut sample_count = 0_usize;
+            let mut non_winner_sample_count = 0_usize;
+            let mut runtime_illegal_label_count = 0_usize;
+            for mut sample in samples {
+                let is_downweighted = is_downweighted_sample(&sample);
+                sample.sample_weight = sample_weight_for_outcome(&sample.outcome);
+                if validate_sample(&sample).is_err() {
+                    runtime_illegal_label_count += 1;
+                    continue;
+                }
+                if is_downweighted {
+                    non_winner_sample_count += 1;
+                }
+                serde_json::to_writer(&mut jsonl_bytes, &sample)
+                    .map_err(|error| error.to_string())?;
+                jsonl_bytes.push(b'\n');
+                sample_count += 1;
+            }
+            Ok(SerializedDatasets2Samples {
+                jsonl_bytes,
+                sample_count,
+                non_winner_sample_count,
+                runtime_illegal_label_count,
+            })
+        });
     Ok(ProcessedDatasets2Match {
         source,
         match_counted: true,
         split: Some(split),
-        samples,
+        serialized,
     })
 }
 
@@ -165,8 +188,8 @@ fn write_processed_match(
     if result.match_counted {
         report.match_count += 1;
     }
-    let samples = match result.samples {
-        Ok(samples) => samples,
+    let serialized = match result.serialized {
+        Ok(serialized) => serialized,
         Err(error) => {
             if result.match_counted {
                 report.replay_error_count += 1;
@@ -182,18 +205,11 @@ fn write_processed_match(
     let split = result
         .split
         .ok_or_else(|| ExportError::Replay("missing split for datasets2 sample".to_string()))?;
-    for mut sample in samples {
-        let is_downweighted = is_downweighted_sample(&sample);
-        sample.sample_weight = sample_weight_for_outcome(&sample.outcome);
-        if validate_sample(&sample).is_err() {
-            report.runtime_illegal_label_count += 1;
-            continue;
-        }
-        if is_downweighted {
-            report.non_winner_sample_count += 1;
-        }
-        writers.write(split, &sample)?;
-        report.sample_count += 1;
+    report.runtime_illegal_label_count += serialized.runtime_illegal_label_count;
+    report.non_winner_sample_count += serialized.non_winner_sample_count;
+    report.sample_count += serialized.sample_count;
+    if !serialized.jsonl_bytes.is_empty() {
+        writers.write_raw(split, &serialized.jsonl_bytes)?;
     }
     Ok(())
 }
@@ -261,21 +277,30 @@ struct ShardWriters {
 
 impl ShardWriters {
     fn new(output_dir: &Path) -> Result<Self, ExportError> {
+        const WRITER_BUF_BYTES: usize = 4 * 1024 * 1024;
         Ok(Self {
-            train: BufWriter::new(File::create(output_dir.join("train.jsonl"))?),
-            val: BufWriter::new(File::create(output_dir.join("val.jsonl"))?),
-            test: BufWriter::new(File::create(output_dir.join("test.jsonl"))?),
+            train: BufWriter::with_capacity(
+                WRITER_BUF_BYTES,
+                File::create(output_dir.join("train.jsonl"))?,
+            ),
+            val: BufWriter::with_capacity(
+                WRITER_BUF_BYTES,
+                File::create(output_dir.join("val.jsonl"))?,
+            ),
+            test: BufWriter::with_capacity(
+                WRITER_BUF_BYTES,
+                File::create(output_dir.join("test.jsonl"))?,
+            ),
         })
     }
 
-    fn write(&mut self, split: DatasetSplit, sample: &impl Serialize) -> Result<(), ExportError> {
+    fn write_raw(&mut self, split: DatasetSplit, bytes: &[u8]) -> Result<(), ExportError> {
         let writer = match split {
             DatasetSplit::Train => &mut self.train,
             DatasetSplit::Val => &mut self.val,
             DatasetSplit::Test => &mut self.test,
         };
-        serde_json::to_writer(&mut *writer, sample)?;
-        writer.write_all(b"\n")?;
+        writer.write_all(bytes)?;
         Ok(())
     }
 

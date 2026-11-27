@@ -2,7 +2,7 @@ use std::collections::BTreeMap;
 use std::fs::{self, File};
 use std::io::{BufWriter, Write};
 use std::path::{Path, PathBuf};
-use std::sync::{Arc, mpsc};
+use std::sync::mpsc;
 use std::thread;
 use std::time::Instant;
 
@@ -184,7 +184,15 @@ pub fn run_export_with_options(
 struct ProcessedMatch {
     match_id: String,
     split: DatasetSplit,
-    samples: Result<Vec<TrainingDecisionSampleV2>, String>,
+    serialized: Result<SerializedMatchSamples, String>,
+}
+
+struct SerializedMatchSamples {
+    jsonl_bytes: Vec<u8>,
+    sample_count: usize,
+    non_winner_sample_count: usize,
+    runtime_illegal_label_count: usize,
+    samples_by_decision_kind: BTreeMap<String, usize>,
 }
 
 fn process_matches(
@@ -194,61 +202,91 @@ fn process_matches(
 ) -> Result<(), ExportError> {
     if worker_count <= 1 || matches.len() <= 1 {
         for record in matches {
-            visit(process_one_match(record))?;
+            visit(process_one_match(&record))?;
         }
         return Ok(());
     }
 
-    let total = matches.len();
-    let records = Arc::new(matches);
-    let (sender, receiver) = mpsc::channel::<(usize, ProcessedMatch)>();
-    let workers = worker_count.min(total);
-    let mut handles = Vec::with_capacity(workers);
-    for worker_index in 0..workers {
-        let records = Arc::clone(&records);
-        let sender = sender.clone();
-        handles.push(thread::spawn(move || {
-            let mut index = worker_index;
-            while index < records.len() {
-                let processed = process_one_match(records[index].clone());
-                if sender.send((index, processed)).is_err() {
-                    return;
-                }
-                index += workers;
+    let workers = worker_count.min(matches.len());
+    // 按有界批次并行执行 replay + JSON 序列化，避免无界 mpsc 通道积压导致内存爆涨
+    let chunk_size = (workers * 16).max(64);
+    for chunk in matches.chunks(chunk_size) {
+        let mut results: Vec<Option<ProcessedMatch>> = (0..chunk.len()).map(|_| None).collect();
+        let active_workers = workers.min(chunk.len());
+        let (sender, receiver) = mpsc::channel::<(usize, ProcessedMatch)>();
+        thread::scope(|scope| {
+            for worker_index in 0..active_workers {
+                let sender = sender.clone();
+                scope.spawn(move || {
+                    let mut index = worker_index;
+                    while index < chunk.len() {
+                        let processed = process_one_match(&chunk[index]);
+                        if sender.send((index, processed)).is_err() {
+                            return;
+                        }
+                        index += active_workers;
+                    }
+                });
             }
-        }));
-    }
-    drop(sender);
-
-    let mut pending = BTreeMap::<usize, ProcessedMatch>::new();
-    let mut next_index = 0_usize;
-    for (index, processed) in receiver {
-        pending.insert(index, processed);
-        while let Some(processed) = pending.remove(&next_index) {
+            drop(sender);
+            for (index, processed) in receiver {
+                results[index] = Some(processed);
+            }
+        });
+        for item in results {
+            let processed = item
+                .ok_or_else(|| ExportError::Replay("missing worker result".to_string()))?;
             visit(processed)?;
-            next_index += 1;
         }
-    }
-    for handle in handles {
-        if handle.join().is_err() {
-            return Err(ExportError::Replay("export worker panicked".to_string()));
-        }
-    }
-    if next_index != total {
-        return Err(ExportError::Replay("missing worker result".to_string()));
     }
     Ok(())
 }
 
-fn process_one_match(record: BotZoneMatch) -> ProcessedMatch {
+fn process_one_match(record: &BotZoneMatch) -> ProcessedMatch {
     let split = split_for_match_id(&record.match_id);
     let match_id = record.match_id.clone();
-    let samples = replay_match_to_samples(&record).map_err(|error| error.to_string());
+    let serialized = replay_match_to_samples(record)
+        .map_err(|error| error.to_string())
+        .and_then(|samples| serialize_match_samples(samples).map_err(|error| error.to_string()));
     ProcessedMatch {
         match_id,
         split,
-        samples,
+        serialized,
     }
+}
+
+fn serialize_match_samples(
+    samples: Vec<TrainingDecisionSampleV2>,
+) -> Result<SerializedMatchSamples, ExportError> {
+    let mut jsonl_bytes = Vec::with_capacity(samples.len().saturating_mul(2048));
+    let mut sample_count = 0_usize;
+    let mut non_winner_sample_count = 0_usize;
+    let mut runtime_illegal_label_count = 0_usize;
+    let mut samples_by_decision_kind = BTreeMap::<String, usize>::new();
+    for mut sample in samples {
+        let is_downweighted = is_downweighted_sample(&sample);
+        sample.sample_weight = sample_weight_for_outcome(&sample.outcome);
+        if validate_sample(&sample).is_err() {
+            runtime_illegal_label_count += 1;
+            continue;
+        }
+        if is_downweighted {
+            non_winner_sample_count += 1;
+        }
+        *samples_by_decision_kind
+            .entry(decision_kind_name(&sample.decision_kind).to_string())
+            .or_default() += 1;
+        serde_json::to_writer(&mut jsonl_bytes, &sample)?;
+        jsonl_bytes.push(b'\n');
+        sample_count += 1;
+    }
+    Ok(SerializedMatchSamples {
+        jsonl_bytes,
+        sample_count,
+        non_winner_sample_count,
+        runtime_illegal_label_count,
+        samples_by_decision_kind,
+    })
 }
 
 fn write_processed_match(
@@ -256,8 +294,8 @@ fn write_processed_match(
     writers: &mut ShardWriters,
     report: &mut ExportReport,
 ) -> Result<(), ExportError> {
-    let samples = match result.samples {
-        Ok(samples) => samples,
+    let serialized = match result.serialized {
+        Ok(serialized) => serialized,
         Err(error) => {
             report.parse_error_count += 1;
             report.skipped_match_ids.push(result.match_id);
@@ -265,23 +303,15 @@ fn write_processed_match(
             return Ok(());
         }
     };
-    for mut sample in samples {
-        let is_downweighted = is_downweighted_sample(&sample);
-        sample.sample_weight = sample_weight_for_outcome(&sample.outcome);
-        if validate_sample(&sample).is_err() {
-            report.runtime_illegal_label_count += 1;
-            continue;
-        }
-        if is_downweighted {
-            report.non_winner_sample_count += 1;
-        }
-        *report.samples_by_split.entry(result.split).or_default() += 1;
-        *report
-            .samples_by_decision_kind
-            .entry(decision_kind_name(&sample.decision_kind).to_string())
-            .or_default() += 1;
-        writers.write(result.split, &sample)?;
-        report.sample_count += 1;
+    report.runtime_illegal_label_count += serialized.runtime_illegal_label_count;
+    report.non_winner_sample_count += serialized.non_winner_sample_count;
+    report.sample_count += serialized.sample_count;
+    *report.samples_by_split.entry(result.split).or_default() += serialized.sample_count;
+    for (kind, count) in serialized.samples_by_decision_kind {
+        *report.samples_by_decision_kind.entry(kind).or_default() += count;
+    }
+    if !serialized.jsonl_bytes.is_empty() {
+        writers.write_raw(result.split, &serialized.jsonl_bytes)?;
     }
     Ok(())
 }
@@ -435,25 +465,30 @@ struct ShardWriters {
 
 impl ShardWriters {
     fn new(output_dir: &Path) -> Result<Self, ExportError> {
+        const WRITER_BUF_BYTES: usize = 4 * 1024 * 1024;
         Ok(Self {
-            train: BufWriter::new(File::create(output_dir.join("train.jsonl"))?),
-            val: BufWriter::new(File::create(output_dir.join("val.jsonl"))?),
-            test: BufWriter::new(File::create(output_dir.join("test.jsonl"))?),
+            train: BufWriter::with_capacity(
+                WRITER_BUF_BYTES,
+                File::create(output_dir.join("train.jsonl"))?,
+            ),
+            val: BufWriter::with_capacity(
+                WRITER_BUF_BYTES,
+                File::create(output_dir.join("val.jsonl"))?,
+            ),
+            test: BufWriter::with_capacity(
+                WRITER_BUF_BYTES,
+                File::create(output_dir.join("test.jsonl"))?,
+            ),
         })
     }
 
-    fn write(
-        &mut self,
-        split: DatasetSplit,
-        sample: &TrainingDecisionSampleV2,
-    ) -> Result<(), ExportError> {
+    fn write_raw(&mut self, split: DatasetSplit, bytes: &[u8]) -> Result<(), ExportError> {
         let writer = match split {
             DatasetSplit::Train => &mut self.train,
             DatasetSplit::Val => &mut self.val,
             DatasetSplit::Test => &mut self.test,
         };
-        serde_json::to_writer(&mut *writer, sample)?;
-        writer.write_all(b"\n")?;
+        writer.write_all(bytes)?;
         Ok(())
     }
 
