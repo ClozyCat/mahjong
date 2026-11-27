@@ -655,9 +655,9 @@ def test_auxiliary_loss_weights_can_disable_value_and_risk() -> None:
         hu_weight=1.0,
     )
 
-    # Huber loss on sanitized 100.0 prediction vs 0.0 target is 99.5 (< 100.0 clamp)
-    assert losses["value_loss"].item() == pytest.approx(99.5)
-    assert losses["fan_loss"].item() == pytest.approx(99.5)
+    # Huber loss on 999.0 vs 0.0 is 998.5, clamped to 100.0 safeguard ceiling
+    assert losses["value_loss"].item() == pytest.approx(100.0)
+    assert losses["fan_loss"].item() == pytest.approx(100.0)
     assert losses["risk_loss"].item() >= 0.0
     assert losses["loss"].item() < 0.1
 
@@ -835,7 +835,7 @@ def test_risk_loss_ignores_unmasked_tiles() -> None:
         "fan_value": torch.zeros((1, 1)),
         "qualifying_fan_value": torch.zeros((1, 1)),
         "opponent_tenpai_logits": torch.zeros((1, 3)),
-        "opponent_risk_logits": torch.full((1, 3, 34), -10.0),
+        "opponent_risk_logits": torch.full((1, 3, 34), 10.0),
     }
     batch = {
         "discard_mask": torch.zeros((1, 34), dtype=torch.bool),
@@ -851,7 +851,7 @@ def test_risk_loss_ignores_unmasked_tiles() -> None:
         "qualifying_fan_target": torch.zeros((1, 1)),
         "opponent_tenpai_target": torch.zeros((1, 3)),
         "opponent_risk_target": torch.zeros((1, 3, 34)),
-        "opponent_risk_mask": torch.ones((1, 3, 34), dtype=torch.bool),
+        "opponent_risk_mask": torch.zeros((1, 3, 34), dtype=torch.bool),
     }
 
     losses = compute_losses(
@@ -1095,8 +1095,8 @@ def test_fan_loss_contributes_when_weighted() -> None:
         risk_weight=0.0,
     )
 
-    assert losses["fan_loss"].item() == 4.0
-    assert losses["loss"].item() == 2.0
+    assert losses["fan_loss"].item() == pytest.approx(1.5)
+    assert losses["loss"].item() == pytest.approx(0.75)
 
 
 def test_qualifying_fan_loss_contributes_when_weighted() -> None:

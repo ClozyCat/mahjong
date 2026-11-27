@@ -1,3 +1,4 @@
+use std::cell::RefCell;
 use std::collections::HashSet;
 
 use serde::{Deserialize, Serialize};
@@ -5,10 +6,9 @@ use serde::{Deserialize, Serialize};
 use super::botzone::{BotZoneAction, BotZoneMatch, BotZoneResult};
 use crate::bot::action_space::{TILE_KEYS, TILE_KIND_COUNT, tile_index};
 use crate::rules::scoring::{
-    EvaluationInput, TimingFeatures, decompose_winning_hand_with_melds, evaluate_fans,
-    extract_hand_features,
+    EvaluationInput, TimingFeatures, decompose_winning_hand_with_melds_uncached,
+    evaluate_fans_uncached, extract_hand_features_uncached, winning_tile_indices_from_counts,
 };
-use crate::rules::standard::ready_hand::is_tenpai_hand_with_melds;
 
 const TOTAL_TILE_COUNT: i64 = 136;
 
@@ -279,6 +279,8 @@ struct ReplayState {
     current_drawn_tile_ids: [Option<String>; 4],
     restricted_discard_tile_key: Option<String>,
     next_sequence: usize,
+    seat_shape_waits: RefCell<[Option<Vec<usize>>; 4]>,
+    seat_qualifying_waits: RefCell<[Option<(u64, Vec<f32>)>; 4]>,
 }
 
 impl ReplayState {
@@ -312,7 +314,14 @@ impl ReplayState {
             current_drawn_tile_ids: std::array::from_fn(|_| None),
             restricted_discard_tile_key: None,
             next_sequence,
+            seat_shape_waits: RefCell::new(std::array::from_fn(|_| None)),
+            seat_qualifying_waits: RefCell::new(std::array::from_fn(|_| None)),
         }
+    }
+
+    fn invalidate_seat_cache(&self, seat: usize) {
+        self.seat_shape_waits.borrow_mut()[seat] = None;
+        self.seat_qualifying_waits.borrow_mut()[seat] = None;
     }
 
     fn add_tile(&mut self, seat: usize, tile_key: &str) {
@@ -322,12 +331,14 @@ impl ReplayState {
         self.wall_tiles_remaining = (self.wall_tiles_remaining - 1).max(0);
         self.hands[seat].push(tile);
         self.current_drawn_tile_ids[seat] = Some(tile_id);
+        self.invalidate_seat_cache(seat);
     }
 
     fn remove_one_tile(&mut self, seat: usize, tile_key: &str) -> Option<SerializableBotTile> {
         let index = self.hands[seat]
             .iter()
             .position(|tile| tile.tile_key == tile_key)?;
+        self.invalidate_seat_cache(seat);
         Some(self.hands[seat].remove(index))
     }
 
@@ -588,7 +599,8 @@ impl ReplayState {
     fn opponent_targets(&self, record: &BotZoneMatch, seat_index: usize) -> OpponentTargets {
         let standard_current = botzone_seat_to_standard(seat_index);
         let standard_dealer = botzone_seat_to_standard(record.dealer_seat);
-        let visible_tiles = self.visible_tile_keys();
+        let visible_counts = self.visible_tile_counts();
+        let mut visible_tiles_lazy: Option<Vec<String>> = None;
         let mut tenpai = Vec::with_capacity(3);
         let mut risk = Vec::with_capacity(3);
         let mut mask = Vec::with_capacity(3);
@@ -596,26 +608,75 @@ impl ReplayState {
         for opponent_offset in 1..=3 {
             let standard_opponent = (standard_current + opponent_offset) % 4;
             let opponent_seat = standard_seat_to_botzone(standard_opponent);
-            let concealed_tile_keys = self.hands[opponent_seat]
-                .iter()
-                .filter(|tile| tile_index(&tile.tile_key).is_some())
-                .map(|tile| tile.tile_key.clone())
-                .collect::<Vec<_>>();
             let melds = &self.melds[opponent_seat];
             let open_flags = &self.meld_open_flags[opponent_seat];
-            let shape_tenpai = is_tenpai_hand_with_melds(&concealed_tile_keys, melds);
-            let opponent_seat_wind = standard_seat_wind(standard_opponent, standard_dealer);
-            let winning_targets = opponent_qualifying_winning_tile_targets(
-                &concealed_tile_keys,
-                melds,
-                open_flags,
-                &visible_tiles,
-                opponent_seat_wind,
-                &record.round_wind,
-                opponent_seat,
-                seat_index,
-                shape_tenpai,
-            );
+
+            let shape_waits = {
+                let mut cache = self.seat_shape_waits.borrow_mut();
+                if cache[opponent_seat].is_none() {
+                    let counts = tile_counts(&self.hands[opponent_seat]);
+                    cache[opponent_seat] =
+                        Some(winning_tile_indices_from_counts(&counts, melds.len()));
+                }
+                cache[opponent_seat].as_ref().unwrap().clone()
+            };
+
+            if shape_waits.is_empty() {
+                tenpai.push(0.0);
+                risk.push(vec![0.0; TILE_KIND_COUNT]);
+                mask.push(vec![0.0; TILE_KIND_COUNT]);
+                continue;
+            }
+
+            let mut visible_ge3_mask = 0_u64;
+            for &tile_idx in &shape_waits {
+                if visible_counts[tile_idx] >= 3 {
+                    visible_ge3_mask |= 1_u64 << tile_idx;
+                }
+            }
+
+            let cached_targets = {
+                let cache = self.seat_qualifying_waits.borrow();
+                cache[opponent_seat]
+                    .as_ref()
+                    .and_then(|(mask_bits, targets)| {
+                        if *mask_bits == visible_ge3_mask {
+                            Some(targets.clone())
+                        } else {
+                            None
+                        }
+                    })
+            };
+
+            let winning_targets = match cached_targets {
+                Some(targets) => targets,
+                None => {
+                    let concealed_tile_keys = self.hands[opponent_seat]
+                        .iter()
+                        .filter(|tile| tile_index(&tile.tile_key).is_some())
+                        .map(|tile| tile.tile_key.clone())
+                        .collect::<Vec<_>>();
+                    let visible_tiles =
+                        visible_tiles_lazy.get_or_insert_with(|| self.visible_tile_keys());
+                    let opponent_seat_wind =
+                        standard_seat_wind(standard_opponent, standard_dealer);
+                    let targets = opponent_qualifying_winning_tile_targets(
+                        &concealed_tile_keys,
+                        melds,
+                        open_flags,
+                        visible_tiles,
+                        opponent_seat_wind,
+                        &record.round_wind,
+                        opponent_seat,
+                        seat_index,
+                        &shape_waits,
+                    );
+                    self.seat_qualifying_waits.borrow_mut()[opponent_seat] =
+                        Some((visible_ge3_mask, targets.clone()));
+                    targets
+                }
+            };
+
             let is_qualified_tenpai = winning_targets.iter().any(|&v| v > 0.5);
             tenpai.push(if is_qualified_tenpai { 1.0 } else { 0.0 });
             risk.push(winning_targets);
@@ -788,6 +849,32 @@ impl ReplayState {
             }
         }
         visible_tile_keys
+    }
+
+    fn visible_tile_counts(&self) -> [u8; TILE_KIND_COUNT] {
+        let mut counts = [0_u8; TILE_KIND_COUNT];
+        for discards in &self.discards {
+            for key in discards {
+                if let Some(idx) = tile_index(key) {
+                    counts[idx] = counts[idx].saturating_add(1);
+                }
+            }
+        }
+        for melds in &self.melds {
+            for meld in melds {
+                let take_len = if meld.len() == 4 && meld.iter().all(|k| k == &meld[0]) {
+                    3
+                } else {
+                    meld.len()
+                };
+                for key in meld.iter().take(take_len) {
+                    if let Some(idx) = tile_index(key) {
+                        counts[idx] = counts[idx].saturating_add(1);
+                    }
+                }
+            }
+        }
+        counts
     }
 }
 
@@ -1016,7 +1103,7 @@ fn calculate_exact_fan_and_families(
         Some(winning_tile)
     };
 
-    let features = extract_hand_features(
+    let features = extract_hand_features_uncached(
         &concealed_tile_keys,
         &meld_tile_key_groups,
         Some(meld_open_flags),
@@ -1061,7 +1148,7 @@ fn calculate_exact_fan_and_families(
         decompositions: Vec::new(),
     };
 
-    let result = evaluate_fans(input);
+    let result = evaluate_fans_uncached(input, QUALIFYING_MINIMUM_FAN);
     let families = fan_family_targets(&result.fan_keys, result.minimum_qualifying_fan_total);
     (result.minimum_qualifying_fan_total, families)
 }
@@ -1184,10 +1271,11 @@ fn opponent_qualifying_winning_tile_targets(
     round_wind: &str,
     opponent_seat: usize,
     discarder_seat: usize,
-    is_shape_tenpai: bool,
+    shape_waits: &[usize],
 ) -> Vec<f32> {
-    if !is_shape_tenpai {
-        return vec![0.0; TILE_KIND_COUNT];
+    let mut targets = vec![0.0_f32; TILE_KIND_COUNT];
+    if shape_waits.is_empty() {
+        return targets;
     }
     let open_melds: Vec<Vec<String>> = melds
         .iter()
@@ -1197,54 +1285,53 @@ fn opponent_qualifying_winning_tile_targets(
         .collect();
     let meld_flat: Vec<String> = melds.iter().flatten().cloned().collect();
 
-    TILE_KEYS
-        .iter()
-        .map(|tile_key| {
-            let mut simulated = Vec::with_capacity(concealed_tile_keys.len() + 1);
-            simulated.extend_from_slice(concealed_tile_keys);
-            simulated.push((*tile_key).to_string());
-            let decompositions = decompose_winning_hand_with_melds(&simulated, melds);
-            if decompositions.is_empty() {
-                return 0.0;
-            }
-            let features = extract_hand_features(
-                concealed_tile_keys,
-                melds,
-                Some(meld_open_flags),
-                Some(tile_key),
-                Some(seat_wind),
-                Some(round_wind),
-                Some(&decompositions),
-            );
-            let mut all_tiles = Vec::with_capacity(simulated.len() + meld_flat.len());
-            all_tiles.extend(simulated);
-            all_tiles.extend(meld_flat.iter().cloned());
-            let input = EvaluationInput {
-                win_type: "discard".to_string(),
-                winner_seat: Some(opponent_seat),
-                discarder_seat: Some(discarder_seat),
-                ready_hand_declared: false,
-                flower_count: 0,
-                seat_count: 4,
-                features,
-                timing: TimingFeatures::default(),
-                kong_entries: Vec::new(),
-                tile_keys: all_tiles,
-                visible_tile_keys: visible_tile_keys.to_vec(),
-                concealed_tile_keys: concealed_tile_keys.to_vec(),
-                meld_tile_key_groups: melds.to_vec(),
-                open_meld_tile_key_groups: open_melds.clone(),
-                incoming_tile: Some((*tile_key).to_string()),
-                winning_tile: Some((*tile_key).to_string()),
-                decompositions,
-            };
-            if evaluate_fans(input).minimum_qualifying_fan_total >= QUALIFYING_MINIMUM_FAN {
-                1.0
-            } else {
-                0.0
-            }
-        })
-        .collect()
+    for &tile_idx in shape_waits {
+        let tile_key = TILE_KEYS[tile_idx];
+        let mut simulated = Vec::with_capacity(concealed_tile_keys.len() + 1);
+        simulated.extend_from_slice(concealed_tile_keys);
+        simulated.push(tile_key.to_string());
+        let decompositions = decompose_winning_hand_with_melds_uncached(&simulated, melds);
+        if decompositions.is_empty() {
+            continue;
+        }
+        let features = extract_hand_features_uncached(
+            concealed_tile_keys,
+            melds,
+            Some(meld_open_flags),
+            Some(tile_key),
+            Some(seat_wind),
+            Some(round_wind),
+            Some(&decompositions),
+        );
+        let mut all_tiles = Vec::with_capacity(simulated.len() + meld_flat.len());
+        all_tiles.extend(simulated);
+        all_tiles.extend(meld_flat.iter().cloned());
+        let input = EvaluationInput {
+            win_type: "discard".to_string(),
+            winner_seat: Some(opponent_seat),
+            discarder_seat: Some(discarder_seat),
+            ready_hand_declared: false,
+            flower_count: 0,
+            seat_count: 4,
+            features,
+            timing: TimingFeatures::default(),
+            kong_entries: Vec::new(),
+            tile_keys: all_tiles,
+            visible_tile_keys: visible_tile_keys.to_vec(),
+            concealed_tile_keys: concealed_tile_keys.to_vec(),
+            meld_tile_key_groups: melds.to_vec(),
+            open_meld_tile_key_groups: open_melds.clone(),
+            incoming_tile: Some(tile_key.to_string()),
+            winning_tile: Some(tile_key.to_string()),
+            decompositions,
+        };
+        if evaluate_fans_uncached(input, QUALIFYING_MINIMUM_FAN).minimum_qualifying_fan_total
+            >= QUALIFYING_MINIMUM_FAN
+        {
+            targets[tile_idx] = 1.0;
+        }
+    }
+    targets
 }
 
 fn make_tile(match_id: &str, seat: usize, sequence: usize, tile_key: &str) -> SerializableBotTile {

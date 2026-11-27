@@ -533,7 +533,7 @@ pub fn evaluate_fans_with_minimum(input: EvaluationInput, minimum_hu_fan: i64) -
     )
 }
 
-fn evaluate_fans_uncached(input: EvaluationInput, minimum_hu_fan: i64) -> FanResult {
+pub fn evaluate_fans_uncached(input: EvaluationInput, minimum_hu_fan: i64) -> FanResult {
     let context = FanContext::from_input(input);
     let best_result = fan_scenarios(&context)
         .into_iter()
@@ -625,7 +625,7 @@ pub fn extract_hand_features(
     )
 }
 
-fn extract_hand_features_uncached(
+pub fn extract_hand_features_uncached(
     concealed_tile_keys: &[String],
     meld_tile_key_groups: &[Vec<String>],
     meld_open_flags: Option<&[bool]>,
@@ -759,12 +759,12 @@ pub fn decompose_winning_hand_with_melds(
     )
 }
 
-fn decompose_winning_hand_with_melds_uncached(
+pub fn decompose_winning_hand_with_melds_uncached(
     concealed_tile_keys: &[String],
     meld_tile_key_groups: &[Vec<String>],
 ) -> Vec<Decomposition> {
     if meld_tile_key_groups.is_empty() {
-        return decompose_winning_hand(concealed_tile_keys);
+        return decompose_winning_hand_uncached(concealed_tile_keys);
     }
 
     let normalized = meld_tile_key_groups
@@ -806,6 +806,48 @@ pub fn is_winning_hand(tile_keys: &[String]) -> bool {
         return false;
     };
     is_winning_hand_from_counts(&counts)
+}
+
+/// 无锁快速计算 13 张（或副露后 `3*(4-meld_count)+1` 张）听牌手牌的所有牌型听口索引。
+pub fn winning_tile_indices_from_counts(
+    concealed_counts: &[u8; TILE_KIND_COUNT],
+    meld_count: usize,
+) -> Vec<usize> {
+    if meld_count > 4 {
+        return Vec::new();
+    }
+    let expected = (4 - meld_count) * 3 + 1;
+    if total_tile_count(concealed_counts) != expected {
+        return Vec::new();
+    }
+    let mut waits = Vec::new();
+    for tile_idx in 0..TILE_KIND_COUNT {
+        if concealed_counts[tile_idx] >= 4 {
+            continue;
+        }
+        if meld_count > 0 {
+            let has_local_support = concealed_counts[tile_idx] > 0
+                || (tile_idx < HONOR_TILE_START && {
+                    let rank = tile_idx % 9;
+                    (rank > 0 && concealed_counts[tile_idx - 1] > 0)
+                        || (rank < 8 && concealed_counts[tile_idx + 1] > 0)
+                });
+            if !has_local_support {
+                continue;
+            }
+        }
+        let mut simulated = *concealed_counts;
+        simulated[tile_idx] += 1;
+        let wins = if meld_count == 0 {
+            is_winning_hand_from_counts(&simulated)
+        } else {
+            has_standard_winning_hand(&simulated)
+        };
+        if wins {
+            waits.push(tile_idx);
+        }
+    }
+    waits
 }
 
 fn fan_scenarios(context: &FanContext) -> Vec<FanContext> {
