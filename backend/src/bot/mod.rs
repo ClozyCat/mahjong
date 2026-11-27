@@ -1,7 +1,7 @@
 pub(crate) mod action_space;
 pub mod context;
 pub(crate) mod features;
-mod neural;
+pub mod neural;
 pub mod policy;
 
 pub use context::BotAction;

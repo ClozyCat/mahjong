@@ -240,6 +240,8 @@ def main() -> None:
                 val_metrics,
                 epoch,
                 model_config,
+                optimizer=optimizer,
+                scheduler=scheduler,
             )
         else:
             epochs_without_improvement += 1
@@ -251,6 +253,8 @@ def main() -> None:
                 val_metrics,
                 epoch,
                 model_config,
+                optimizer=optimizer,
+                scheduler=scheduler,
             )
         if checkpoint_decision.save_latest:
             save_checkpoint(
@@ -260,6 +264,8 @@ def main() -> None:
                 val_metrics,
                 epoch,
                 model_config,
+                optimizer=optimizer,
+                scheduler=scheduler,
             )
 
         print(
@@ -716,70 +722,90 @@ def compute_losses(
         non_pass_class_weights(outputs["self_kong_logits"], self_kong_rare_action_weight),
         sample_weights=sample_weights,
     )
+    # 策略模仿头使用 sample_weights（偏向 8 番赢家轨迹），辅助估计头保持无偏（权重=1.0）！
+    hu_target_filtered = torch.where(
+        batch["hu_mask"][:, 1].bool(),
+        batch["hu_target"],
+        torch.full_like(batch["hu_target"], IGNORE_INDEX),
+    )
     hu_loss = masked_cross_entropy(
         outputs["hu_logits"],
         batch["hu_mask"],
-        batch["hu_target"],
+        hu_target_filtered,
         hu_class_weights(outputs["hu_logits"], hu_positive_weight),
         sample_weights=sample_weights,
     )
 
-    # 添加数值稳定性保护
-    value_loss = weighted_mean(
-        F.mse_loss(outputs["value"], batch["value_target"].float(), reduction="none"),
-        sample_weights,
+    # 辅助价值/番数头不乘 sample_weights，避免赢家过采样导致的系统性正偏置；使用 HuberLoss 抵抗 88 番长尾
+    value_loss = F.huber_loss(
+        outputs["value"],
+        batch["value_target"].float(),
+        delta=1.0,
+        reduction="mean",
     )
-    value_loss = torch.clamp(value_loss, max=100.0)  # 防止MSE爆炸
-    fan_loss = weighted_mean(
-        F.mse_loss(outputs["fan_value"], batch["fan_target"].float(), reduction="none"),
-        sample_weights,
+    value_loss = torch.clamp(value_loss, max=100.0)
+    fan_loss = F.huber_loss(
+        outputs["fan_value"],
+        batch["fan_target"].float(),
+        delta=1.0,
+        reduction="mean",
     )
     fan_loss = torch.clamp(fan_loss, max=100.0)
-    qualifying_fan_loss = weighted_mean(
-        F.mse_loss(
-            outputs["qualifying_fan_value"],
-            batch["qualifying_fan_target"].float(),
-            reduction="none",
-        ),
-        sample_weights,
+    qualifying_fan_loss = F.mse_loss(
+        outputs["qualifying_fan_value"],
+        batch["qualifying_fan_target"].float(),
+        reduction="mean",
     )
     qualifying_fan_loss = torch.clamp(qualifying_fan_loss, max=100.0)
+
+    score_bucket_loss = torch.tensor(0.0, device=value_loss.device)
+    if "score_bucket_logits" in outputs and "score_bucket_target" in batch:
+        score_bucket_loss = F.cross_entropy(
+            outputs["score_bucket_logits"].float(),
+            batch["score_bucket_target"].long(),
+        )
+
+    fan_family_loss = torch.tensor(0.0, device=value_loss.device)
+    if (
+        "fan_family_logits" in outputs
+        and "fan_family_target" in batch
+        and "fan_family_mask" in batch
+    ):
+        ff_mask = batch["fan_family_mask"].bool()
+        if torch.any(ff_mask):
+            fan_family_loss = F.binary_cross_entropy_with_logits(
+                outputs["fan_family_logits"][ff_mask].float(),
+                batch["fan_family_target"][ff_mask].float(),
+            )
 
     opponent_tenpai_loss = torch.tensor(0.0, device=value_loss.device)
     opponent_risk_loss = torch.tensor(0.0, device=value_loss.device)
     if "opponent_tenpai_logits" in outputs and "opponent_risk_logits" in outputs:
         if "opponent_tenpai_target" in batch:
-            opponent_tenpai_loss = weighted_mean(
-                F.binary_cross_entropy_with_logits(
-                    outputs["opponent_tenpai_logits"],
-                    batch["opponent_tenpai_target"].float(),
-                    reduction="none",
-                ),
-                sample_weights,
+            opponent_tenpai_loss = F.binary_cross_entropy_with_logits(
+                outputs["opponent_tenpai_logits"].float(),
+                batch["opponent_tenpai_target"].float(),
+                reduction="mean",
             )
         if "opponent_risk_target" in batch and "opponent_risk_mask" in batch:
             risk_targets = batch["opponent_risk_target"].float()
             risk_masks = batch["opponent_risk_mask"].bool()
-            alpha = 0.25
-            gamma = 2.0
-            bce = F.binary_cross_entropy_with_logits(
-                outputs["opponent_risk_logits"],
-                risk_targets,
-                reduction="none",
-            )
-            probs = torch.sigmoid(outputs["opponent_risk_logits"])
-            pt = torch.where(risk_targets == 1, probs, 1 - probs)
-            focal_weight = (1 - pt) ** gamma
-            focal_loss = alpha * focal_weight * bce
-            opponent_risk_loss = masked_weighted_mean(focal_loss, risk_masks, sample_weights)
+            if torch.any(risk_masks):
+                # 无偏校准的 masked BCE：直接学出条件放铳概率 P(tile wins >=8 fan | opponent tenpai)
+                bce = F.binary_cross_entropy_with_logits(
+                    outputs["opponent_risk_logits"].float(),
+                    risk_targets,
+                    reduction="none",
+                )
+                opponent_risk_loss = bce[risk_masks].mean()
 
     loss = (
         discard_loss
         + claim_weight * claim_loss
         + self_kong_weight * self_kong_loss
         + hu_weight * hu_loss
-        + value_weight * value_loss
-        + fan_weight * fan_loss
+        + value_weight * (value_loss + 0.35 * score_bucket_loss)
+        + fan_weight * (fan_loss + 0.35 * fan_family_loss)
         + qualifying_fan_weight * qualifying_fan_loss
         + risk_weight * (opponent_tenpai_loss + opponent_risk_loss)
     )
@@ -940,7 +966,9 @@ def masked_cross_entropy(
     if class_weights is not None:
         losses = losses * class_weights[active_targets]
     if sample_weights is not None:
-        losses = losses * sample_weights[active]
+        w = sample_weights[active]
+        weight_sum = w.sum().clamp_min(1e-6)
+        return (losses * w).sum() / weight_sum
     return losses.mean()
 
 
@@ -1279,19 +1307,24 @@ def save_checkpoint(
     metrics: dict[str, float],
     epoch: int,
     model_config: ModelConfig,
+    optimizer: torch.optim.Optimizer | None = None,
+    scheduler: Any = None,
 ) -> None:
-    torch.save(
-        {
-            "model_state": model.state_dict(),
-            "metadata": metadata,
-            "metrics": metrics,
-            "epoch": epoch,
-            "model_config": model_config.to_dict(),
-            "training_source": "sft",
-            "created_at_utc": datetime.now(UTC).isoformat(),
-        },
-        path,
-    )
+    raw_model = getattr(model, "_orig_mod", model)
+    payload: dict[str, Any] = {
+        "model_state": raw_model.state_dict(),
+        "metadata": metadata,
+        "metrics": metrics,
+        "epoch": epoch,
+        "model_config": model_config.to_dict(),
+        "training_source": "sft",
+        "created_at_utc": datetime.now(UTC).isoformat(),
+    }
+    if optimizer is not None:
+        payload["optimizer_state"] = optimizer.state_dict()
+    if scheduler is not None:
+        payload["scheduler_state"] = scheduler.state_dict()
+    torch.save(payload, path)
 
 if __name__ == "__main__":
     main()

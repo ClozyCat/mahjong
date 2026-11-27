@@ -101,16 +101,11 @@ pub fn evaluation_match_seeds(seed: u64, matches: usize) -> Vec<u64> {
 
 pub fn default_sft_opponents() -> Vec<BotPolicyConfig> {
     (0..3)
-        .map(|index| BotPolicyConfig {
-            id: format!("sft-opponent-{}", index + 1),
-            model_path: Some(crate::bot_config::SFT_MODEL_PATH.to_string()),
-            sample_actions: false,
-            temperature: 1.0,
-            temperature_range: None,
-            discard_base_risk_weight: 0.90,
-            discard_value_risk_range: 0.55,
-            discard_min_risk_weight: 0.25,
-            discard_max_risk_weight: 1.45,
+        .map(|index| {
+            BotPolicyConfig::default_with_model(
+                format!("sft-opponent-{}", index + 1),
+                Some(crate::bot_config::SFT_MODEL_PATH.to_string()),
+            )
         })
         .collect()
 }
@@ -153,16 +148,9 @@ mod tests {
     }
 
     fn test_policy(id: &str) -> BotPolicyConfig {
-        BotPolicyConfig {
-            id: id.to_string(),
-            model_path: Some(crate::bot_config::SFT_MODEL_PATH.to_string()),
-            sample_actions: false,
-            temperature: 1.0,
-            temperature_range: None,
-            discard_base_risk_weight: 0.90,
-            discard_value_risk_range: 0.55,
-            discard_min_risk_weight: 0.25,
-            discard_max_risk_weight: 1.45,
-        }
+        BotPolicyConfig::default_with_model(
+            id,
+            Some(crate::bot_config::SFT_MODEL_PATH.to_string()),
+        )
     }
 }

@@ -14,16 +14,18 @@ except ModuleNotFoundError:
     Dataset = object
 
 TILE_KIND_COUNT = 34
-TILE_PLANE_COUNT = 10
-SCALAR_FEATURE_COUNT = 13
+TILE_PLANE_COUNT = 24
+SCALAR_FEATURE_COUNT = 18
+FAN_FAMILY_COUNT = 8
 DISCARD_SEQUENCE_LENGTH = 32
 DISCARD_EVENT_FEATURE_COUNT = 40
 IGNORE_INDEX = -100
-DISK_CACHE_VERSION = 11
+DISK_CACHE_VERSION = 13
 CACHE_FLUSH_EVERY_ROWS = 100_000
+VALUE_TARGET_SCALE = 100.0
 FAN_TARGET_SCALE = 16.0
 QUALIFYING_FAN_TARGET = 8.0
-EXPECTED_METADATA_SCHEMA_VERSION = 7
+EXPECTED_METADATA_SCHEMA_VERSION = 8
 STANDARD_WIND_ORDER = ("east", "south", "west", "north")
 ROUND_WIND_TO_INDEX = {"east": 0.0, "south": 1.0, "west": 2.0, "north": 3.0}
 
@@ -100,8 +102,9 @@ class MahjongDecisionDataset(Dataset):
                     if repaired:
                         repaired_rows += 1
                     encoded = encode_row(row, self.metadata, self.lookups)
+                    cached = encode_row_for_disk_cache(encoded)
                     for name, mmap_array in arrays.items():
-                        mmap_array[row_index] = encoded[name]
+                        mmap_array[row_index] = cached[name]
                     row_index += 1
                     flush_disk_cache_arrays(arrays, row_index)
                     pbar.update(1)
@@ -166,11 +169,67 @@ class MahjongDecisionDataset(Dataset):
         # 每个 batch 只从磁盘映射缓存读取当前索引，避免整份数据常驻内存。
         # chunked shuffle 会生成多个连续片段；分片读取比一次 fancy indexing 更友好。
         indexers = batch_indexers_for_indices(indices)
-        batch = {
-            name: torch.from_numpy(read_indexed_array(mmap_array, indexers))
-            for name, mmap_array in self._arrays.items()
-        }
+        batch: dict[str, torch.Tensor] = {}
+        for name, mmap_array in self._arrays.items():
+            raw = read_indexed_array(mmap_array, indexers)
+            if name == "tile_planes":
+                batch[name] = torch.from_numpy(raw).to(torch.float32).mul_(0.25)
+            elif name == "discard_seq_compact":
+                batch["discard_sequence"] = decode_discard_sequence_batch(raw)
+            else:
+                batch[name] = torch.from_numpy(raw)
         return batch
+
+
+def encode_row_for_disk_cache(encoded: dict[str, np.ndarray]) -> dict[str, np.ndarray]:
+    cached = dict(encoded)
+    cached["tile_planes"] = np.clip(
+        np.rint(encoded["tile_planes"] * 4.0), 0, 4
+    ).astype(np.uint8)
+    cached["discard_seq_compact"] = compact_discard_sequence(encoded.pop("discard_sequence"))
+    cached["opponent_risk_target"] = encoded["opponent_risk_target"] > 0.5
+    return cached
+
+
+def compact_discard_sequence(sequence: np.ndarray) -> np.ndarray:
+    compact = np.zeros((DISCARD_SEQUENCE_LENGTH, 3), dtype=np.uint8)
+    tile_part = sequence[:, :TILE_KIND_COUNT]
+    has_tile = tile_part.max(axis=1) > 0.5
+    if np.any(has_tile):
+        compact[has_tile, 0] = tile_part[has_tile].argmax(axis=1).astype(np.uint8) + 1
+    seat_part = sequence[:, TILE_KIND_COUNT : TILE_KIND_COUNT + 4]
+    has_seat = seat_part.max(axis=1) > 0.5
+    if np.any(has_seat):
+        compact[has_seat, 1] = seat_part[has_seat].argmax(axis=1).astype(np.uint8) + 1
+    compact[:, 2] = (sequence[:, 39] > 0.5).astype(np.uint8)
+    return compact
+
+
+def decode_discard_sequence_batch(compact_np: np.ndarray) -> torch.Tensor:
+    compact = torch.from_numpy(compact_np).long()
+    bsz, seq_len, _ = compact.shape
+    out = torch.zeros((bsz, seq_len, DISCARD_EVENT_FEATURE_COUNT), dtype=torch.float32)
+    tile_code = compact[:, :, 0]
+    seat_code = compact[:, :, 1]
+    latest_flag = compact[:, :, 2]
+
+    active = (tile_code > 0) | (seat_code > 0)
+    if torch.any(active):
+        b_idx, s_idx = torch.where(active)
+        pos_val = (s_idx.to(torch.float32) + 1.0) / float(DISCARD_SEQUENCE_LENGTH)
+        out[b_idx, s_idx, 38] = pos_val
+        out[b_idx, s_idx, 39] = latest_flag[b_idx, s_idx].to(torch.float32)
+
+        t_active = tile_code > 0
+        if torch.any(t_active):
+            tb, ts = torch.where(t_active)
+            out[tb, ts, tile_code[tb, ts] - 1] = 1.0
+
+        s_active = seat_code > 0
+        if torch.any(s_active):
+            sb, ss = torch.where(s_active)
+            out[sb, ss, TILE_KIND_COUNT + seat_code[sb, ss] - 1] = 1.0
+    return out
 
 
 def resolve_cache_dir(jsonl_path: Path, cache_dir: Path | None) -> Path:
@@ -180,12 +239,9 @@ def resolve_cache_dir(jsonl_path: Path, cache_dir: Path | None) -> Path:
 
 def tensor_array_specs(metadata: dict[str, Any]) -> dict[str, tuple[tuple[int, ...], np.dtype]]:
     return {
-        "tile_planes": ((TILE_PLANE_COUNT, TILE_KIND_COUNT), np.dtype(np.float32)),
+        "tile_planes": ((TILE_PLANE_COUNT, TILE_KIND_COUNT), np.dtype(np.uint8)),
         "scalar_features": ((SCALAR_FEATURE_COUNT,), np.dtype(np.float32)),
-        "discard_sequence": (
-            (DISCARD_SEQUENCE_LENGTH, DISCARD_EVENT_FEATURE_COUNT),
-            np.dtype(np.float32),
-        ),
+        "discard_seq_compact": ((DISCARD_SEQUENCE_LENGTH, 3), np.dtype(np.uint8)),
         "discard_mask": ((TILE_KIND_COUNT,), np.dtype(np.bool_)),
         "claim_mask": ((len(metadata["claim_actions"]),), np.dtype(np.bool_)),
         "self_kong_mask": ((len(metadata["self_kong_actions"]),), np.dtype(np.bool_)),
@@ -195,11 +251,14 @@ def tensor_array_specs(metadata: dict[str, Any]) -> dict[str, tuple[tuple[int, .
         "self_kong_target": ((), np.dtype(np.int64)),
         "hu_target": ((), np.dtype(np.int64)),
         "value_target": ((1,), np.dtype(np.float32)),
+        "score_bucket_target": ((), np.dtype(np.int64)),
         "opponent_tenpai_target": ((3,), np.dtype(np.float32)),
-        "opponent_risk_target": ((3, TILE_KIND_COUNT), np.dtype(np.float32)),
+        "opponent_risk_target": ((3, TILE_KIND_COUNT), np.dtype(np.bool_)),
         "opponent_risk_mask": ((3, TILE_KIND_COUNT), np.dtype(np.bool_)),
         "fan_target": ((1,), np.dtype(np.float32)),
         "qualifying_fan_target": ((1,), np.dtype(np.float32)),
+        "fan_family_target": ((FAN_FAMILY_COUNT,), np.dtype(np.float32)),
+        "fan_family_mask": ((), np.dtype(np.bool_)),
         "sample_weight": ((1,), np.dtype(np.float32)),
         "decision_kind": ((), np.dtype(np.int64)),
     }
@@ -426,7 +485,14 @@ def encode_row(
         "claim_target": np.asarray(claim_target(row, claim_to_index, tile_to_index), dtype=np.int64),
         "self_kong_target": np.asarray(self_kong_target(row, self_kong_to_index), dtype=np.int64),
         "hu_target": np.asarray(hu_target(row), dtype=np.int64),
-        "value_target": np.asarray([float(row["outcome"]["score_delta"]) / 1000.0], dtype=np.float32),
+        "value_target": np.asarray(
+            [float(row["outcome"]["score_delta"]) / VALUE_TARGET_SCALE],
+            dtype=np.float32,
+        ),
+        "score_bucket_target": np.asarray(
+            score_bucket_target(row),
+            dtype=np.int64,
+        ),
         "opponent_tenpai_target": np.asarray(
             row["opponent_tenpai_target"], dtype=np.float32
         ),
@@ -436,41 +502,119 @@ def encode_row(
         "opponent_risk_mask": np.asarray(row["opponent_risk_mask"], dtype=np.bool_),
         "fan_target": fan_target(row),
         "qualifying_fan_target": qualifying_fan_target(row),
+        "fan_family_target": fan_family_target(row),
+        "fan_family_mask": np.asarray(
+            bool(row.get("outcome", {}).get("won", False)),
+            dtype=np.bool_,
+        ),
         "sample_weight": sample_weight(row),
         "decision_kind": np.asarray(decision_kind_index(row["decision_kind"]), dtype=np.int64),
     }
 
 
+def _is_identical_meld(meld: Sequence[str]) -> bool:
+    return bool(meld) and all(tile_key == meld[0] for tile_key in meld)
+
+
 def encode_tile_planes(context: dict[str, Any], tile_to_index: dict[str, int]) -> np.ndarray:
     planes = np.zeros((TILE_PLANE_COUNT, TILE_KIND_COUNT), dtype=np.float32)
 
-    add_count_plane(
-        planes,
-        0,
-        [
-            tile["tile_key"]
-            for tile in context["player"]["concealed_tiles"]
-            if not tile.get("is_flower", False)
-        ],
-        tile_to_index,
-    )
-    add_count_plane(planes, 1, flatten(context["player"].get("meld_tile_key_groups", [])), tile_to_index)
-    add_count_plane(planes, 2, context.get("visible_tile_keys", []), tile_to_index)
+    # Planes 0..3: own concealed tiles thermometer encoding (>=1, >=2, >=3, >=4).
+    own_counts = np.zeros((TILE_KIND_COUNT,), dtype=np.int32)
+    for tile in context["player"]["concealed_tiles"]:
+        if tile.get("is_flower", False):
+            continue
+        index = tile_to_index.get(tile["tile_key"])
+        if index is not None:
+            own_counts[index] = min(4, own_counts[index] + 1)
+    for level in range(4):
+        planes[level] = (own_counts > level).astype(np.float32)
 
+    # Planes 4..7: own melds split by chow / open pung / open kong / concealed kong.
+    meld_groups = context["player"].get("meld_tile_key_groups", [])
+    meld_open_flags = context["player"].get("meld_open_flags", [])
+    for meld_idx, meld in enumerate(meld_groups):
+        is_open = bool(meld_open_flags[meld_idx]) if meld_idx < len(meld_open_flags) else True
+        if len(meld) == 4 and _is_identical_meld(meld):
+            idx = tile_to_index.get(meld[0])
+            if idx is not None:
+                planes[6 if is_open else 7, idx] = 1.0
+        elif len(meld) == 3 and _is_identical_meld(meld):
+            idx = tile_to_index.get(meld[0])
+            if idx is not None:
+                planes[5, idx] = 1.0
+        else:
+            add_normalized_count_plane(planes, 4, meld, tile_to_index)
+
+    # Plane 8: remaining unknown copies per tile kind normalized to [0, 1].
+    known_counts = own_counts.copy()
+    for tile_key in context.get("visible_tile_keys", []):
+        idx = tile_to_index.get(tile_key)
+        if idx is not None:
+            known_counts[idx] += 1
+    melds_by_seat = context.get("opponent_melds_by_seat", [])
+    for seat_melds in melds_by_seat:
+        for meld in seat_melds:
+            if len(meld) == 4 and _is_identical_meld(meld):
+                idx = tile_to_index.get(meld[0])
+                if idx is not None:
+                    known_counts[idx] += 1
+    planes[8] = np.clip(4 - known_counts, 0, 4).astype(np.float32) / 4.0
+
+    # Plane 9: own discards (count / 4).
     seat_index = int(context["seat_index"])
     seat_count = max(1, int(context.get("seat_count", 4)))
     discards_by_seat = context.get("opponent_discards_by_seat", [])
-    melds_by_seat = context.get("opponent_melds_by_seat", [])
+    if seat_index < len(discards_by_seat):
+        add_normalized_count_plane(planes, 9, discards_by_seat[seat_index], tile_to_index)
+
+    # Planes 10..15: opponent +1/+2/+3 discards & melds (count / 4).
+    # Planes 16..18: opponent +1/+2/+3 pung/kong meld indicator.
     for offset in range(1, 4):
         seat = (seat_index + offset) % seat_count
         if seat < len(discards_by_seat):
-            add_count_plane(planes, 2 + offset * 2 - 1, discards_by_seat[seat], tile_to_index)
+            add_normalized_count_plane(planes, 10 + (offset - 1) * 2, discards_by_seat[seat], tile_to_index)
         if seat < len(melds_by_seat):
-            add_count_plane(planes, 2 + offset * 2, flatten(melds_by_seat[seat]), tile_to_index)
+            add_normalized_count_plane(planes, 11 + (offset - 1) * 2, flatten(melds_by_seat[seat]), tile_to_index)
+            for meld in melds_by_seat[seat]:
+                if len(meld) >= 3 and _is_identical_meld(meld):
+                    idx = tile_to_index.get(meld[0])
+                    if idx is not None:
+                        planes[15 + offset, idx] = 1.0
 
+    # Plane 19: last_discard_tile_key.
     last_discard = context.get("last_discard_tile_key")
     if last_discard in tile_to_index:
-        planes[9, tile_to_index[last_discard]] = 1.0
+        planes[19, tile_to_index[last_discard]] = 1.0
+
+    # Plane 20: drawn_tile.
+    drawn_tile_id = context.get("drawn_tile_id")
+    if drawn_tile_id is not None:
+        for tile in context["player"]["concealed_tiles"]:
+            if not tile.get("is_flower", False) and tile.get("tile_id") == drawn_tile_id:
+                idx = tile_to_index.get(tile["tile_key"])
+                if idx is not None:
+                    planes[20, idx] = 1.0
+                break
+
+    # Plane 21: restricted_discard_tile_key.
+    restricted = context.get("restricted_discard_tile_key")
+    if restricted in tile_to_index:
+        planes[21, tile_to_index[restricted]] = 1.0
+
+    # Plane 22: round wind tile one-hot (27..30).
+    round_wind = context.get("round_wind", "east")
+    round_wind_idx = int(ROUND_WIND_TO_INDEX.get(round_wind, 0.0))
+    planes[22, 27 + round_wind_idx] = 1.0
+
+    # Plane 23: seat wind tile one-hot (27..30).
+    seat_wind = context.get("seat_wind") or seat_wind_key(
+        seat_index,
+        int(context.get("dealer_seat", 0)),
+    )
+    seat_wind_idx = int(ROUND_WIND_TO_INDEX.get(seat_wind, 0.0))
+    planes[23, 27 + seat_wind_idx] = 1.0
+
     return planes
 
 
@@ -520,9 +664,28 @@ def encode_scalar_features(context: dict[str, Any]) -> np.ndarray:
         seat_index,
         int(context.get("dealer_seat", 0)),
     )
+    seat_wind_val = ROUND_WIND_TO_INDEX.get(seat_wind, 0.0)
     features[11] = 1.0 if seat_wind == round_wind else 0.0
     features[12] = int(context.get("minimum_hu_fan", 8)) / 16.0
-    
+
+    meld_groups = context["player"].get("meld_tile_key_groups", [])
+    meld_open_flags = context["player"].get("meld_open_flags", [])
+    open_meld_count = 0
+    chow_count = 0
+    pung_or_kong_count = 0
+    for idx, meld in enumerate(meld_groups):
+        if idx >= len(meld_open_flags) or bool(meld_open_flags[idx]):
+            open_meld_count += 1
+        if len(meld) >= 3 and _is_identical_meld(meld):
+            pung_or_kong_count += 1
+        elif meld:
+            chow_count += 1
+    features[13] = 1.0 if open_meld_count == 0 else 0.0
+    features[14] = min(4, open_meld_count) / 4.0
+    features[15] = min(4, chow_count) / 4.0
+    features[16] = min(4, pung_or_kong_count) / 4.0
+    features[17] = seat_wind_val / 3.0
+
     return features
 
 
@@ -592,7 +755,9 @@ def claim_target(
             return claim_to_index["pass"]
         return IGNORE_INDEX
     if label_type == "hu":
-        return claim_to_index["hu"]
+        if row["decision_kind"] in {"claim_window", "rob_kong"}:
+            return claim_to_index["hu"]
+        return IGNORE_INDEX
     if label_type == "claim_pung":
         return claim_to_index["pung"]
     if label_type == "claim_kong":
@@ -622,9 +787,30 @@ def hu_target(row: dict[str, Any]) -> int:
     label_type = row["label"]["type"]
     if label_type == "hu":
         return 1
-    if row["decision_kind"] in {"claim_window", "rob_kong"}:
+    legal_actions = row.get("legal_actions", [])
+    if any(action == "claim:hu" or action == "hu" for action in legal_actions):
         return 0
     return IGNORE_INDEX
+
+
+def score_bucket_target(row: dict[str, Any]) -> int:
+    delta = float(row.get("outcome", {}).get("score_delta", 0.0))
+    if delta <= -24.0:
+        return 0
+    if delta < 0.0:
+        return 1
+    if delta == 0.0:
+        return 2
+    if delta < 32.0:
+        return 3
+    return 4
+
+
+def fan_family_target(row: dict[str, Any]) -> np.ndarray:
+    raw = row.get("outcome", {}).get("fan_families")
+    if isinstance(raw, list) and len(raw) == FAN_FAMILY_COUNT:
+        return np.asarray(raw, dtype=np.float32)
+    return np.zeros((FAN_FAMILY_COUNT,), dtype=np.float32)
 
 
 def fan_target(row: dict[str, Any]) -> np.ndarray:
@@ -688,6 +874,18 @@ def add_count_plane(
         index = tile_to_index.get(tile_key)
         if index is not None:
             planes[plane, index] = min(4.0, planes[plane, index] + 1.0)
+
+
+def add_normalized_count_plane(
+    planes: np.ndarray,
+    plane: int,
+    tile_keys: Sequence[str],
+    tile_to_index: dict[str, int],
+) -> None:
+    for tile_key in tile_keys:
+        index = tile_to_index.get(tile_key)
+        if index is not None:
+            planes[plane, index] = min(1.0, planes[plane, index] + 0.25)
 
 
 def flatten(groups: list[list[str]]) -> list[str]:

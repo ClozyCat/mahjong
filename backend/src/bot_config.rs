@@ -24,15 +24,8 @@ pub(crate) fn seat_blocks_public_records(seat: &SeatState) -> bool {
 }
 
 pub(crate) fn policy_config_for_seat(_room: &RoomState, seat_index: usize) -> BotPolicyConfig {
-    BotPolicyConfig {
-        id: format!("sft-seat-{seat_index}"),
-        model_path: Some(default_model_path().to_string()),
-        sample_actions: false,
-        temperature: 1.0,
-        temperature_range: None,
-        discard_base_risk_weight: 0.90,
-        discard_value_risk_range: 0.55,
-        discard_min_risk_weight: 0.25,
-        discard_max_risk_weight: 1.45,
-    }
+    BotPolicyConfig::default_with_model(
+        format!("sft-seat-{seat_index}"),
+        Some(default_model_path().to_string()),
+    )
 }

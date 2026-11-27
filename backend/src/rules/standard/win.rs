@@ -388,6 +388,36 @@ pub fn apply_hu_settlement_output(
     Ok(EngineOutput::new(events, emitted_messages))
 }
 
+pub fn legal_hu_available_for_seat_in_room_state(
+    room: &RoomState,
+    seat_index: usize,
+) -> Option<&'static str> {
+    if room.phase != "playing" {
+        return None;
+    }
+    let round = room.round_state.as_ref()?;
+    let Some(pending_action) = round.pending_action.as_ref() else {
+        let cache = RoomScoringCache::from_state(room);
+        return can_declare_self_draw_hu_with_cache_for_state(room, &cache, seat_index)
+            .then_some("self_draw");
+    };
+    match pending_action {
+        PendingAction::ClaimWindow(claim)
+            if claim_window_action_offers_claim(claim, seat_index, "hu")
+                && hu_meets_minimum_fan_for_state(room, seat_index, "discard") =>
+        {
+            Some("discard")
+        }
+        PendingAction::RobKongWindow(rob)
+            if rob_kong_action_offers_seat(rob, seat_index)
+                && hu_meets_minimum_fan_for_state(room, seat_index, "discard") =>
+        {
+            Some("rob_kong")
+        }
+        _ => None,
+    }
+}
+
 pub fn hu_action_hint_in_room_state(room: &RoomState, seat_index: usize) -> Option<&'static str> {
     if room.phase != "playing" {
         return None;

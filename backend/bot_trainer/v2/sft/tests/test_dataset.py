@@ -27,7 +27,7 @@ def test_encode_row_without_torch_dependency(tmp_path: Path) -> None:
 
     encoded = encode_row(row, metadata)
 
-    assert encoded["tile_planes"].shape == (10, 34)
+    assert encoded["tile_planes"].shape == (24, 34)
     assert encoded["scalar_features"].shape == (SCALAR_FEATURE_COUNT,)
     assert encoded["discard_sequence"].shape == (
         DISCARD_SEQUENCE_LENGTH,
@@ -539,7 +539,7 @@ def test_dataset_reads_batches_from_disk_cache(tmp_path: Path) -> None:
 
     assert len(dataset) == 1
     assert (tmp_path / "cache" / "train" / "tile_planes.npy").exists()
-    assert batch["tile_planes"].shape == (1, 10, 34)
+    assert batch["tile_planes"].shape == (1, 24, 34)
     assert batch["scalar_features"].shape == (1, SCALAR_FEATURE_COUNT)
     assert batch["discard_sequence"].shape == (
         1,
@@ -655,10 +655,9 @@ def test_auxiliary_loss_weights_can_disable_value_and_risk() -> None:
         hu_weight=1.0,
     )
 
-    # value_loss 被裁剪到 max=100.0 以防止数值爆炸
-    assert losses["value_loss"].item() == 100.0
-    assert losses["fan_loss"].item() == 100.0
-    # risk_loss现在是opponent modeling loss，可能为0（无opponent targets）
+    # Huber loss on sanitized 100.0 prediction vs 0.0 target is 99.5 (< 100.0 clamp)
+    assert losses["value_loss"].item() == pytest.approx(99.5)
+    assert losses["fan_loss"].item() == pytest.approx(99.5)
     assert losses["risk_loss"].item() >= 0.0
     assert losses["loss"].item() < 0.1
 
@@ -711,37 +710,43 @@ def test_checkpoint_tracking_updates_loss_top1_and_latest() -> None:
     assert tracker.best_discard_metrics["discard_top1"] == 0.65
 
 
-def test_sample_weight_scales_selection_loss() -> None:
+def test_sample_weight_normalized_weighted_mean() -> None:
     import torch
     from train import compute_losses
 
     outputs = {
-        "discard_logits": torch.tensor([[0.0, 0.0] + [-100.0] * 32]),
-        "claim_logits": torch.zeros((1, 7)),
-        "self_kong_logits": torch.zeros((1, 3)),
-        "hu_logits": torch.zeros((1, 2)),
-        "value": torch.zeros((1, 1)),
-        "fan_value": torch.zeros((1, 1)),
-        "qualifying_fan_value": torch.zeros((1, 1)),
-        "opponent_tenpai_logits": torch.zeros((1, 3)),
-        "opponent_risk_logits": torch.zeros((1, 3, 34)),
+        "discard_logits": torch.tensor([
+            [0.0, 0.0] + [-100.0] * 32,
+            [2.0, 0.0] + [-100.0] * 32,
+        ]),
+        "claim_logits": torch.zeros((2, 7)),
+        "self_kong_logits": torch.zeros((2, 3)),
+        "hu_logits": torch.zeros((2, 2)),
+        "value": torch.zeros((2, 1)),
+        "fan_value": torch.zeros((2, 1)),
+        "qualifying_fan_value": torch.zeros((2, 1)),
+        "opponent_tenpai_logits": torch.zeros((2, 3)),
+        "opponent_risk_logits": torch.zeros((2, 3, 34)),
     }
     batch = {
-        "discard_mask": torch.tensor([[True, True] + [False] * 32]),
-        "discard_target": torch.tensor([0]),
-        "claim_mask": torch.zeros((1, 7), dtype=torch.bool),
-        "claim_target": torch.tensor([-100]),
-        "self_kong_mask": torch.zeros((1, 3), dtype=torch.bool),
-        "self_kong_target": torch.tensor([-100]),
-        "hu_mask": torch.zeros((1, 2), dtype=torch.bool),
-        "hu_target": torch.tensor([-100]),
-        "value_target": torch.zeros((1, 1)),
-        "fan_target": torch.zeros((1, 1)),
-        "qualifying_fan_target": torch.zeros((1, 1)),
-        "opponent_tenpai_target": torch.zeros((1, 3)),
-        "opponent_risk_target": torch.zeros((1, 3, 34)),
-        "opponent_risk_mask": torch.zeros((1, 3, 34), dtype=torch.bool),
-        "sample_weight": torch.tensor([[0.25]]),
+        "discard_mask": torch.tensor([
+            [True, True] + [False] * 32,
+            [True, True] + [False] * 32,
+        ]),
+        "discard_target": torch.tensor([0, 0]),
+        "claim_mask": torch.zeros((2, 7), dtype=torch.bool),
+        "claim_target": torch.tensor([-100, -100]),
+        "self_kong_mask": torch.zeros((2, 3), dtype=torch.bool),
+        "self_kong_target": torch.tensor([-100, -100]),
+        "hu_mask": torch.zeros((2, 2), dtype=torch.bool),
+        "hu_target": torch.tensor([-100, -100]),
+        "value_target": torch.zeros((2, 1)),
+        "fan_target": torch.zeros((2, 1)),
+        "qualifying_fan_target": torch.zeros((2, 1)),
+        "opponent_tenpai_target": torch.zeros((2, 3)),
+        "opponent_risk_target": torch.zeros((2, 3, 34)),
+        "opponent_risk_mask": torch.zeros((2, 3, 34), dtype=torch.bool),
+        "sample_weight": torch.tensor([[1.0], [0.25]]),
     }
 
     losses = compute_losses(
@@ -753,7 +758,10 @@ def test_sample_weight_scales_selection_loss() -> None:
         risk_weight=0.0,
     )
 
-    assert losses["discard_loss"].item() == pytest.approx(0.25 * 0.693147, rel=1e-5)
+    l0 = float(torch.nn.functional.cross_entropy(torch.tensor([[0.0, 0.0]]), torch.tensor([0])))
+    l1 = float(torch.nn.functional.cross_entropy(torch.tensor([[2.0, 0.0]]), torch.tensor([0])))
+    expected = (1.0 * l0 + 0.25 * l1) / 1.25
+    assert losses["discard_loss"].item() == pytest.approx(expected, rel=1e-5)
 
 
 def test_dynamic_sample_reweighting_scales_low_weight_and_early_wall_samples() -> None:
@@ -1213,7 +1221,7 @@ def claim_row(base_row: dict, last_discard: str, middle_tile_key: str) -> dict:
 
 def write_fixture(tmp_path: Path) -> tuple[Path, Path]:
     metadata = {
-        "schema_version": 7,
+        "schema_version": 8,
         "tile_keys": [
             "w1", "w2", "w3", "w4", "w5", "w6", "w7", "w8", "w9",
             "t1", "t2", "t3", "t4", "t5", "t6", "t7", "t8", "t9",
@@ -1224,7 +1232,7 @@ def write_fixture(tmp_path: Path) -> tuple[Path, Path]:
         "self_kong_actions": ["pass", "concealed_kong", "add_kong"],
     }
     row = {
-        "schema_version": 7,
+        "schema_version": 8,
         "sample_weight": 1.0,
         "match_id": "fixture",
         "decision_index": 0,

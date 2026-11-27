@@ -7,6 +7,8 @@ use crate::room_scoring::RoomScoringCache;
 
 const TILE_PLANE_COUNT: usize = 10;
 const SCALAR_FEATURE_COUNT: usize = 13;
+const TILE_PLANE_COUNT_V3: usize = 24;
+const SCALAR_FEATURE_COUNT_V3: usize = 18;
 const DISCARD_SEQUENCE_LENGTH: usize = 32;
 const DISCARD_EVENT_FEATURE_COUNT: usize = 40;
 
@@ -15,8 +17,17 @@ const GLOBAL_TILE_PLANE_COUNT: usize = 40;
 #[allow(dead_code)]
 const GLOBAL_SCALAR_FEATURE_COUNT: usize = 20;
 
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(crate) enum FeatureVersion {
+    V2,
+    V3,
+}
+
 #[derive(Clone, Debug)]
 pub(crate) struct BotFeaturesV2 {
+    pub(crate) feature_version: FeatureVersion,
+    pub(crate) tile_plane_count: usize,
+    pub(crate) scalar_feature_count: usize,
     pub(crate) tile_planes: Vec<f32>,
     pub(crate) scalar_features: Vec<f32>,
     pub(crate) discard_sequence: Vec<f32>,
@@ -26,8 +37,21 @@ pub(crate) struct BotFeaturesV2 {
     pub(crate) hu_mask: [bool; 2],
 }
 
+pub(crate) fn encode_bot_context_for_version(
+    context: &BotContext,
+    version: FeatureVersion,
+) -> BotFeaturesV2 {
+    match version {
+        FeatureVersion::V2 => encode_bot_context_v2(context),
+        FeatureVersion::V3 => encode_bot_context_v3(context),
+    }
+}
+
 pub(crate) fn encode_bot_context_v2(context: &BotContext) -> BotFeaturesV2 {
     BotFeaturesV2 {
+        feature_version: FeatureVersion::V2,
+        tile_plane_count: TILE_PLANE_COUNT,
+        scalar_feature_count: SCALAR_FEATURE_COUNT,
         tile_planes: encode_tile_planes(context),
         scalar_features: encode_scalar_features(context),
         discard_sequence: encode_discard_sequence(context),
@@ -38,12 +62,43 @@ pub(crate) fn encode_bot_context_v2(context: &BotContext) -> BotFeaturesV2 {
     }
 }
 
+pub(crate) fn encode_bot_context_v3(context: &BotContext) -> BotFeaturesV2 {
+    let (_, meld_open_flags) = crate::rules::standard::win::classify_meld_groups_for_projection(
+        context.seat_index,
+        &context.player.meld_tile_key_groups,
+        &context.kong_entries,
+    );
+    BotFeaturesV2 {
+        feature_version: FeatureVersion::V3,
+        tile_plane_count: TILE_PLANE_COUNT_V3,
+        scalar_feature_count: SCALAR_FEATURE_COUNT_V3,
+        tile_planes: encode_tile_planes_v3(context, &meld_open_flags),
+        scalar_features: encode_scalar_features_v3(context, &meld_open_flags),
+        discard_sequence: encode_discard_sequence(context),
+        discard_mask: legal_discard_mask(context),
+        claim_mask: legal_claim_mask(context),
+        self_kong_mask: legal_self_kong_mask(context),
+        hu_mask: legal_hu_mask(context),
+    }
+}
+
+#[cfg(test)]
 pub(crate) fn tile_plane_count_v2() -> usize {
     TILE_PLANE_COUNT
 }
 
+#[cfg(test)]
 pub(crate) fn scalar_feature_count_v2() -> usize {
     SCALAR_FEATURE_COUNT
+}
+
+pub(crate) fn tile_plane_count_v3() -> usize {
+    TILE_PLANE_COUNT_V3
+}
+
+#[cfg(test)]
+pub(crate) fn scalar_feature_count_v3() -> usize {
+    SCALAR_FEATURE_COUNT_V3
 }
 
 pub(crate) fn discard_sequence_length_v2() -> usize {
@@ -107,6 +162,181 @@ fn encode_tile_planes(context: &BotContext) -> Vec<f32> {
     }
 
     planes
+}
+
+fn is_identical_meld(meld: &[String]) -> bool {
+    meld.first()
+        .is_some_and(|first| meld.iter().all(|tile_key| tile_key == first))
+}
+
+fn encode_tile_planes_v3(context: &BotContext, meld_open_flags: &[bool]) -> Vec<f32> {
+    let mut planes = vec![0.0_f32; TILE_PLANE_COUNT_V3 * TILE_KIND_COUNT];
+
+    // Planes 0..3: own concealed tiles thermometer encoding (>=1, >=2, >=3, >=4).
+    let mut own_counts = [0_u8; TILE_KIND_COUNT];
+    for tile in &context.player.concealed_tiles {
+        if tile.is_flower {
+            continue;
+        }
+        if let Some(index) = tile_index(&tile.tile_key) {
+            own_counts[index] = own_counts[index].saturating_add(1).min(4);
+        }
+    }
+    for (tile_idx, &count) in own_counts.iter().enumerate() {
+        for level in 0..4 {
+            if usize::from(count) > level {
+                planes[level * TILE_KIND_COUNT + tile_idx] = 1.0;
+            }
+        }
+    }
+
+    // Planes 4..7: own melds split by chow / open pung / open kong / concealed kong.
+    for (meld_idx, meld) in context.player.meld_tile_key_groups.iter().enumerate() {
+        let is_open = meld_open_flags.get(meld_idx).copied().unwrap_or(true);
+        if meld.len() == 4 && is_identical_meld(meld) {
+            let plane = if is_open { 6 } else { 7 };
+            if let Some(first) = meld.first() {
+                set_binary_tile(&mut planes, plane, first);
+            }
+        } else if meld.len() == 3 && is_identical_meld(meld) {
+            if let Some(first) = meld.first() {
+                set_binary_tile(&mut planes, 5, first);
+            }
+        } else {
+            add_normalized_count_plane(&mut planes, 4, meld.iter().map(String::as_str));
+        }
+    }
+
+    // Plane 8: remaining unknown copies per tile kind, normalized to [0, 1].
+    let mut known_counts = own_counts;
+    for tile_key in &context.visible_tile_keys {
+        if let Some(index) = tile_index(tile_key) {
+            known_counts[index] = known_counts[index].saturating_add(1);
+        }
+    }
+    // 4-tile kongs only add 3 copies into visible_tile_keys; account for the 4th copy.
+    for melds in &context.opponent_melds_by_seat {
+        for meld in melds {
+            if meld.len() == 4 && is_identical_meld(meld) {
+                if let Some(index) = meld.first().and_then(|key| tile_index(key)) {
+                    known_counts[index] = known_counts[index].saturating_add(1);
+                }
+            }
+        }
+    }
+    for (tile_idx, &known) in known_counts.iter().enumerate() {
+        let remaining = 4_u8.saturating_sub(known);
+        planes[8 * TILE_KIND_COUNT + tile_idx] = f32::from(remaining) / 4.0;
+    }
+
+    // Plane 9: own discards (count / 4).
+    let seat_count = context.seat_count.max(1);
+    if let Some(own_discards) = context.opponent_discards_by_seat.get(context.seat_index) {
+        add_normalized_count_plane(&mut planes, 9, own_discards.iter().map(String::as_str));
+    }
+
+    // Planes 10..15: opponent +1/+2/+3 discards & all melds (count / 4).
+    // Planes 16..18: opponent +1/+2/+3 pung/kong meld indicator.
+    for offset in 1..=3 {
+        let seat = (context.seat_index + offset) % seat_count;
+        if let Some(discards) = context.opponent_discards_by_seat.get(seat) {
+            add_normalized_count_plane(
+                &mut planes,
+                10 + (offset - 1) * 2,
+                discards.iter().map(String::as_str),
+            );
+        }
+        if let Some(melds) = context.opponent_melds_by_seat.get(seat) {
+            add_normalized_count_plane(
+                &mut planes,
+                11 + (offset - 1) * 2,
+                melds
+                    .iter()
+                    .flat_map(|group| group.iter().map(String::as_str)),
+            );
+            for meld in melds {
+                if meld.len() >= 3 && is_identical_meld(meld) {
+                    if let Some(first) = meld.first() {
+                        set_binary_tile(&mut planes, 15 + offset, first);
+                    }
+                }
+            }
+        }
+    }
+
+    // Plane 19: last_discard_tile_key.
+    if let Some(tile_key) = context.last_discard_tile_key.as_deref() {
+        set_binary_tile(&mut planes, 19, tile_key);
+    }
+
+    // Plane 20: drawn_tile.
+    if let Some(drawn_id) = context.drawn_tile_id.as_deref() {
+        if let Some(drawn_tile) = context
+            .player
+            .concealed_tiles
+            .iter()
+            .find(|tile| !tile.is_flower && tile.tile_id == drawn_id)
+        {
+            set_binary_tile(&mut planes, 20, &drawn_tile.tile_key);
+        }
+    }
+
+    // Plane 21: restricted_discard_tile_key.
+    if let Some(tile_key) = context.restricted_discard_tile_key.as_deref() {
+        set_binary_tile(&mut planes, 21, tile_key);
+    }
+
+    // Plane 22: round wind tile one-hot (east/south/west/north -> 27..30).
+    let round_wind_index = standard_wind_index(context.round_wind.as_deref().unwrap_or("east"));
+    planes[22 * TILE_KIND_COUNT + 27 + round_wind_index] = 1.0;
+
+    // Plane 23: seat wind tile one-hot (east/south/west/north -> 27..30).
+    let seat_wind = seat_wind_key(context.seat_index, context.dealer_seat);
+    let seat_wind_index = standard_wind_index(&seat_wind);
+    planes[23 * TILE_KIND_COUNT + 27 + seat_wind_index] = 1.0;
+
+    planes
+}
+
+fn encode_scalar_features_v3(context: &BotContext, meld_open_flags: &[bool]) -> Vec<f32> {
+    let mut features = encode_scalar_features(context);
+    features.resize(SCALAR_FEATURE_COUNT_V3, 0.0);
+
+    let mut open_meld_count = 0_usize;
+    let mut chow_count = 0_usize;
+    let mut pung_or_kong_count = 0_usize;
+    for (idx, meld) in context.player.meld_tile_key_groups.iter().enumerate() {
+        if meld_open_flags.get(idx).copied().unwrap_or(true) {
+            open_meld_count += 1;
+        }
+        if meld.len() >= 3 && is_identical_meld(meld) {
+            pung_or_kong_count += 1;
+        } else if !meld.is_empty() {
+            chow_count += 1;
+        }
+    }
+
+    let seat_wind = seat_wind_key(context.seat_index, context.dealer_seat);
+    let seat_wind_index = standard_wind_index(&seat_wind);
+    features[13] = if open_meld_count == 0 { 1.0 } else { 0.0 };
+    features[14] = (open_meld_count.min(4) as f32) / 4.0;
+    features[15] = (chow_count.min(4) as f32) / 4.0;
+    features[16] = (pung_or_kong_count.min(4) as f32) / 4.0;
+    features[17] = (seat_wind_index as f32) / 3.0;
+    features
+}
+
+fn add_normalized_count_plane<'a>(
+    planes: &mut [f32],
+    plane: usize,
+    tile_keys: impl Iterator<Item = &'a str>,
+) {
+    for tile_key in tile_keys {
+        if let Some(index) = tile_index(tile_key) {
+            let offset = plane * TILE_KIND_COUNT + index;
+            planes[offset] = (planes[offset] + 0.25).min(1.0);
+        }
+    }
 }
 
 fn encode_discard_sequence(context: &BotContext) -> Vec<f32> {
@@ -440,6 +670,54 @@ mod tests {
         );
         assert_eq!(encoded.discard_sequence[latest + TILE_KIND_COUNT + 2], 1.0);
         assert_eq!(encoded.discard_sequence[latest + 39], 1.0);
+    }
+
+    #[test]
+    fn v3_features_encode_thermometer_wind_planes_and_concealed_kong_flags() {
+        let mut context = sample_context_with_tiles(&["w1", "w1", "w1", "t5", "red"]);
+        context.seat_index = 1;
+        context.dealer_seat = 0;
+        context.round_wind = Some("south".to_string());
+        context.drawn_tile_id = Some("red#4".to_string());
+        context.player.meld_tile_key_groups = vec![
+            vec![
+                "b9".to_string(),
+                "b9".to_string(),
+                "b9".to_string(),
+                "b9".to_string(),
+            ],
+        ];
+        context.kong_entries = vec![crate::rules::scoring::KongEntry {
+            kong_type: "concealed_kong".to_string(),
+            actor_seat: 1,
+            payer_seats: vec![0, 2, 3],
+            tile_key: Some("b9".to_string()),
+        }];
+
+        let encoded = encode_bot_context_v3(&context);
+        assert_eq!(encoded.tile_plane_count, 24);
+        assert_eq!(encoded.scalar_feature_count, 18);
+        assert_eq!(encoded.tile_planes.len(), 24 * 34);
+        assert_eq!(encoded.scalar_features.len(), 18);
+
+        let w1 = tile_index("w1").unwrap();
+        // 3 copies of w1 -> planes 0,1,2 are 1.0, plane 3 is 0.0
+        assert_eq!(encoded.tile_planes[0 * 34 + w1], 1.0);
+        assert_eq!(encoded.tile_planes[1 * 34 + w1], 1.0);
+        assert_eq!(encoded.tile_planes[2 * 34 + w1], 1.0);
+        assert_eq!(encoded.tile_planes[3 * 34 + w1], 0.0);
+
+        // Concealed kong b9 -> plane 7 (not plane 6), hand still concealed (scalar[13] == 1.0)
+        let b9 = tile_index("b9").unwrap();
+        assert_eq!(encoded.tile_planes[6 * 34 + b9], 0.0);
+        assert_eq!(encoded.tile_planes[7 * 34 + b9], 1.0);
+        assert_eq!(encoded.scalar_features[13], 1.0);
+
+        // Drawn tile red -> plane 20
+        assert_eq!(encoded.tile_planes[20 * 34 + tile_index("red").unwrap()], 1.0);
+        // Round wind south & seat wind south -> planes 22 & 23 at index 28
+        assert_eq!(encoded.tile_planes[22 * 34 + tile_index("south").unwrap()], 1.0);
+        assert_eq!(encoded.tile_planes[23 * 34 + tile_index("south").unwrap()], 1.0);
     }
 }
 

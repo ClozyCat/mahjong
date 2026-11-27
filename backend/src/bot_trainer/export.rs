@@ -297,7 +297,7 @@ pub fn split_for_match_id(match_id: &str) -> DatasetSplit {
 
 pub fn export_metadata() -> BotDatasetMetadata {
     BotDatasetMetadata {
-        schema_version: 7,
+        schema_version: 8,
         tile_keys: TILE_KEYS.iter().map(|value| (*value).to_string()).collect(),
         decision_kinds: ["active_turn", "claim_window", "rob_kong"]
             .into_iter()
@@ -477,9 +477,9 @@ mod tests {
     }
 
     #[test]
-    fn metadata_contains_v7_model_outputs() {
+    fn metadata_contains_v8_model_outputs() {
         let metadata = export_metadata();
-        assert_eq!(metadata.schema_version, 7);
+        assert_eq!(metadata.schema_version, 8);
         assert!(
             metadata
                 .model_outputs
@@ -535,6 +535,7 @@ mod tests {
             won: true,
             dealt_in: false,
             round_drawn: false,
+            fan_families: vec![0.0; 8],
         };
         let non_winner = crate::bot_trainer::replay::SampleOutcome {
             score_delta: -8,
@@ -542,6 +543,7 @@ mod tests {
             won: false,
             dealt_in: false,
             round_drawn: false,
+            fan_families: vec![0.0; 8],
         };
         let dealt_in = crate::bot_trainer::replay::SampleOutcome {
             dealt_in: true,
@@ -579,11 +581,13 @@ mod tests {
                 visible_tile_keys: vec![],
                 opponent_discards_by_seat: vec![vec![], vec![], vec![], vec![]],
                 opponent_melds_by_seat: vec![vec![], vec![], vec![], vec![]],
+                opponent_meld_open_flags_by_seat: vec![vec![], vec![], vec![], vec![]],
                 discard_history: vec![],
                 player: crate::bot_trainer::replay::SerializableBotPlayer {
                     concealed_tiles: vec![],
                     concealed_tile_counts: vec![0; 34],
                     meld_tile_key_groups: vec![],
+                    meld_open_flags: vec![],
                     flower_count: 0,
                 },
                 restricted_discard_tile_key: Some("w1".to_string()),
@@ -603,6 +607,7 @@ mod tests {
                 won: false,
                 dealt_in: false,
                 round_drawn: false,
+                fan_families: vec![0.0; 8],
             },
             opponent_tenpai_target: vec![0.0; 3],
             opponent_risk_target: vec![vec![0.0; TILE_KEYS.len()]; 3],

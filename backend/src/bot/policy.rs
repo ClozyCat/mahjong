@@ -6,7 +6,9 @@ use rand::{Rng, rngs::StdRng};
 use serde::{Deserialize, Serialize};
 use std::env;
 
-const NEURAL_DISCARD_VALUE_SCALE: f32 = 8.0;
+const NEURAL_DISCARD_VALUE_SCALE: f32 = 0.05;
+const NEURAL_DISCARD_VALUE_SCALE_V3: f32 = 0.50;
+const LEGACY_NEURAL_DISCARD_VALUE_SCALE: f32 = 8.0;
 const NEURAL_HU_PASS_MARGIN: f32 = 3.0;
 
 #[derive(Clone, Debug, Deserialize, Serialize, PartialEq)]
@@ -28,6 +30,52 @@ pub struct BotPolicyConfig {
     pub discard_min_risk_weight: f32,
     #[serde(default = "default_discard_max_risk_weight")]
     pub discard_max_risk_weight: f32,
+    #[serde(default = "default_discard_value_scale")]
+    pub discard_value_scale: f32,
+    #[serde(default = "default_use_joint_tenpai_risk")]
+    pub use_joint_tenpai_risk: bool,
+    #[serde(default = "default_always_take_legal_hu")]
+    pub always_take_legal_hu: bool,
+    #[serde(default)]
+    pub legacy_unscaled_qualifying_fan_gate: bool,
+}
+
+impl BotPolicyConfig {
+    pub fn default_with_model(id: impl Into<String>, model_path: Option<String>) -> Self {
+        Self {
+            id: id.into(),
+            model_path,
+            sample_actions: false,
+            temperature: default_policy_temperature(),
+            temperature_range: None,
+            discard_base_risk_weight: default_discard_base_risk_weight(),
+            discard_value_risk_range: default_discard_value_risk_range(),
+            discard_min_risk_weight: default_discard_min_risk_weight(),
+            discard_max_risk_weight: default_discard_max_risk_weight(),
+            discard_value_scale: default_discard_value_scale(),
+            use_joint_tenpai_risk: default_use_joint_tenpai_risk(),
+            always_take_legal_hu: default_always_take_legal_hu(),
+            legacy_unscaled_qualifying_fan_gate: false,
+        }
+    }
+
+    pub fn legacy_with_model(id: impl Into<String>, model_path: Option<String>) -> Self {
+        Self {
+            id: id.into(),
+            model_path,
+            sample_actions: false,
+            temperature: default_policy_temperature(),
+            temperature_range: None,
+            discard_base_risk_weight: default_discard_base_risk_weight(),
+            discard_value_risk_range: default_discard_value_risk_range(),
+            discard_min_risk_weight: default_discard_min_risk_weight(),
+            discard_max_risk_weight: default_discard_max_risk_weight(),
+            discard_value_scale: LEGACY_NEURAL_DISCARD_VALUE_SCALE,
+            use_joint_tenpai_risk: false,
+            always_take_legal_hu: false,
+            legacy_unscaled_qualifying_fan_gate: true,
+        }
+    }
 }
 
 fn default_policy_temperature() -> f32 {
@@ -50,21 +98,37 @@ fn default_discard_max_risk_weight() -> f32 {
     1.45
 }
 
+fn default_discard_value_scale() -> f32 {
+    NEURAL_DISCARD_VALUE_SCALE
+}
+
+fn default_use_joint_tenpai_risk() -> bool {
+    true
+}
+
+fn default_always_take_legal_hu() -> bool {
+    true
+}
+
 #[derive(Clone, Copy, Debug)]
 pub(crate) struct RiskConfig {
     pub base_risk_weight: f32,
     pub value_risk_range: f32,
     pub min_risk_weight: f32,
     pub max_risk_weight: f32,
+    pub value_scale: f32,
+    pub use_joint_tenpai_risk: bool,
 }
 
 impl Default for RiskConfig {
     fn default() -> Self {
         Self {
-            base_risk_weight: 0.90,
-            value_risk_range: 0.55,
-            min_risk_weight: 0.25,
-            max_risk_weight: 1.45,
+            base_risk_weight: default_discard_base_risk_weight(),
+            value_risk_range: default_discard_value_risk_range(),
+            min_risk_weight: default_discard_min_risk_weight(),
+            max_risk_weight: default_discard_max_risk_weight(),
+            value_scale: default_discard_value_scale(),
+            use_joint_tenpai_risk: default_use_joint_tenpai_risk(),
         }
     }
 }
@@ -76,6 +140,8 @@ impl RiskConfig {
             value_risk_range: config.discard_value_risk_range,
             min_risk_weight: config.discard_min_risk_weight,
             max_risk_weight: config.discard_max_risk_weight,
+            value_scale: config.discard_value_scale,
+            use_joint_tenpai_risk: config.use_joint_tenpai_risk,
         }
     }
 }
@@ -118,8 +184,10 @@ pub(crate) fn choose_active_turn_decision_with_config_and_rng(
 ) -> Option<BotPolicyDecision> {
     let mut telemetry = BotPolicyDecisionTelemetry::default();
     let risk_config = RiskConfig::from_policy_config(config);
-    let features = crate::bot::features::encode_bot_context_v2(context);
-    if let Some(scores) = neural_decision_scores_for_policy_features(&features, config) {
+    let path = config.model_path.as_deref().map(std::path::Path::new);
+    if let Some((scores, features)) =
+        super::neural::neural_decision_scores_for_context(path, context)
+    {
         telemetry.model_loaded = true;
         let action = if config.sample_actions {
             if let Some(rng) = rng.as_deref_mut() {
@@ -174,8 +242,10 @@ pub(crate) fn choose_claim_decision_with_config_and_rng(
     mut rng: Option<&mut StdRng>,
 ) -> Option<BotPolicyDecision> {
     let mut telemetry = BotPolicyDecisionTelemetry::default();
-    let features = crate::bot::features::encode_bot_context_v2(context);
-    if let Some(scores) = neural_decision_scores_for_policy_features(&features, config) {
+    let path = config.model_path.as_deref().map(std::path::Path::new);
+    if let Some((scores, features)) =
+        super::neural::neural_decision_scores_for_context(path, context)
+    {
         telemetry.model_loaded = true;
         let action = if config.sample_actions {
             if let Some(rng) = rng.as_deref_mut() {
@@ -204,7 +274,18 @@ pub(crate) fn choose_neural_hu_decision_with_config_and_rng(
     config: &BotPolicyConfig,
     mut rng: Option<&mut StdRng>,
 ) -> Option<BotPolicyDecision> {
-    let features = crate::bot::features::encode_bot_context_v2(context);
+    let path = config.model_path.as_deref().map(std::path::Path::new);
+    let version = super::neural::model_feature_version(path);
+    let features = crate::bot::features::encode_bot_context_for_version(context, version);
+    if config.always_take_legal_hu && features.hu_mask[1] {
+        return Some(BotPolicyDecision {
+            action: bot_action_for_hu_choice(context.seat_index, NeuralHuChoice::Hu),
+            telemetry: BotPolicyDecisionTelemetry {
+                model_loaded: true,
+                used_neural_action: true,
+            },
+        });
+    }
     let maybe_scores = neural_decision_scores_for_policy_features(&features, config);
     let choice = if let Some(scores) = maybe_scores.as_ref() {
         if config.sample_actions {
@@ -216,9 +297,11 @@ pub(crate) fn choose_neural_hu_decision_with_config_and_rng(
                 let temperature = sample_temperature(config, &mut live_rng);
                 sample_neural_hu_choice(&features, scores, temperature, &mut live_rng)
             }
-            .or_else(|| select_neural_hu_choice(&features, scores, context))?
+            .or_else(|| {
+                select_neural_hu_choice_with_config(&features, scores, context, config)
+            })?
         } else {
-            select_neural_hu_choice(&features, scores, context)?
+            select_neural_hu_choice_with_config(&features, scores, context, config)?
         }
     } else {
         random_hu_choice(&features)?
@@ -237,7 +320,25 @@ pub(crate) fn choose_neural_claim_decision_with_config_and_rng(
     config: &BotPolicyConfig,
     mut rng: Option<&mut StdRng>,
 ) -> Option<BotPolicyDecision> {
-    let features = crate::bot::features::encode_bot_context_v2(context);
+    let path = config.model_path.as_deref().map(std::path::Path::new);
+    let version = super::neural::model_feature_version(path);
+    let features = crate::bot::features::encode_bot_context_for_version(context, version);
+    if config.always_take_legal_hu
+        && crate::bot::action_space::claim_action_index("hu")
+            .is_some_and(|hu_index| features.claim_mask[hu_index])
+    {
+        return Some(BotPolicyDecision {
+            action: BotAction {
+                seat_index: context.seat_index,
+                action_type: "hu".to_string(),
+                tile_ids: Vec::new(),
+            },
+            telemetry: BotPolicyDecisionTelemetry {
+                model_loaded: true,
+                used_neural_action: true,
+            },
+        });
+    }
     let scores = neural_decision_scores_for_policy_features(&features, config)?;
     let action = if config.sample_actions {
         if let Some(rng) = rng.as_deref_mut() {
@@ -264,17 +365,7 @@ pub(crate) fn choose_neural_claim_decision_with_config_and_rng(
 pub(crate) fn bot_policy_config_from_env() -> BotPolicyConfig {
     let model_path = env::var("MAHJONG_BOT_MODEL_PATH")
         .unwrap_or_else(|_| crate::bot_config::SFT_MODEL_PATH.to_string());
-    BotPolicyConfig {
-        id: "env-neural".to_string(),
-        model_path: Some(model_path),
-        sample_actions: false,
-        temperature: 1.0,
-        temperature_range: None,
-        discard_base_risk_weight: 0.90,
-        discard_value_risk_range: 0.55,
-        discard_min_risk_weight: 0.25,
-        discard_max_risk_weight: 1.45,
-    }
+    BotPolicyConfig::default_with_model("env-neural", Some(model_path))
 }
 
 fn neural_decision_scores_for_policy_features(
@@ -531,17 +622,31 @@ fn sample_neural_hu_choice(
     neural_hu_choice_for_index(selected)
 }
 
-fn select_neural_hu_choice(
+fn select_neural_hu_choice_with_config(
     features: &BotFeaturesV2,
     scores: &NeuralDecisionScores,
     context: &BotContext,
+    config: &BotPolicyConfig,
 ) -> Option<NeuralHuChoice> {
     if !features.hu_mask[1] {
         return None;
     }
-    let min_fan = context.minimum_hu_fan as f32;
-    if min_fan > 0.0 && scores.qualifying_fan_value < min_fan {
-        return Some(NeuralHuChoice::Pass);
+    if config.legacy_unscaled_qualifying_fan_gate {
+        let min_fan = context.minimum_hu_fan as f32;
+        if min_fan > 0.0 && scores.qualifying_fan_value < min_fan {
+            return Some(NeuralHuChoice::Pass);
+        }
+    }
+    select_neural_hu_choice(features, scores, context)
+}
+
+fn select_neural_hu_choice(
+    features: &BotFeaturesV2,
+    scores: &NeuralDecisionScores,
+    _context: &BotContext,
+) -> Option<NeuralHuChoice> {
+    if !features.hu_mask[1] {
+        return None;
     }
     let pass_logit = scores.hu_logits[0];
     let hu_logit = scores.hu_logits[1];
@@ -659,15 +764,27 @@ pub(crate) fn risk_adjusted_discard_logits(
     scores: &NeuralDecisionScores,
     risk_config: Option<&RiskConfig>,
 ) -> [f32; TILE_KIND_COUNT] {
-    let risk_config = risk_config.copied().unwrap_or_default();
+    let mut risk_config = risk_config.copied().unwrap_or_default();
+    if scores.feature_version == crate::bot::features::FeatureVersion::V3
+        && (risk_config.value_scale - NEURAL_DISCARD_VALUE_SCALE).abs() < 1e-6
+    {
+        risk_config.value_scale = NEURAL_DISCARD_VALUE_SCALE_V3;
+    }
     let risk_weight = neural_discard_risk_weight(scores.value_for_risk, &risk_config);
+    let joint_probs = risk_config
+        .use_joint_tenpai_risk
+        .then(|| scores.joint_deal_in_probabilities());
     let mut adjusted = scores.discard_logits;
     for (index, logit) in adjusted.iter_mut().enumerate() {
         let policy_logit = scores.discard_logits[index];
         if !policy_logit.is_finite() {
             continue;
         }
-        let Some(risk_probability) = sigmoid_probability(scores.risk_logits[index]) else {
+        let Some(risk_probability) = (if let Some(probs) = joint_probs.as_ref() {
+            probs[index].is_finite().then_some(probs[index])
+        } else {
+            sigmoid_probability(scores.risk_logits[index])
+        }) else {
             continue;
         };
         let adjusted_logit = policy_logit - risk_weight * risk_probability;
@@ -679,8 +796,13 @@ pub(crate) fn risk_adjusted_discard_logits(
 }
 
 fn neural_discard_risk_weight(value: f32, risk_config: &RiskConfig) -> f32 {
+    let scale = if risk_config.value_scale.is_finite() && risk_config.value_scale > 1e-6 {
+        risk_config.value_scale
+    } else {
+        NEURAL_DISCARD_VALUE_SCALE
+    };
     let normalized_value = if value.is_finite() {
-        (value / NEURAL_DISCARD_VALUE_SCALE).clamp(-1.0, 1.0)
+        (value / scale).clamp(-1.0, 1.0)
     } else {
         0.0
     };
@@ -918,6 +1040,7 @@ mod tests {
         value_for_risk: f32,
     ) -> neural::NeuralDecisionScores {
         neural::NeuralDecisionScores {
+            feature_version: crate::bot::features::FeatureVersion::V2,
             discard_logits,
             claim_logits: [0.0; CLAIM_ACTION_COUNT],
             self_kong_logits: [0.0; SELF_KONG_ACTION_COUNT],
@@ -925,6 +1048,12 @@ mod tests {
             value_for_risk,
             qualifying_fan_value: 0.0,
             risk_logits,
+            opponent_tenpai_logits: [20.0; 3],
+            opponent_risk_logits: [
+                risk_logits,
+                [-20.0; TILE_KIND_COUNT],
+                [-20.0; TILE_KIND_COUNT],
+            ],
         }
     }
 
@@ -935,17 +1064,8 @@ mod tests {
         context.player.concealed_tile_counts =
             tile_counts34(concealed_tiles.iter().map(|tile| tile.tile_key.as_str()));
         context.player.concealed_tiles = concealed_tiles.clone();
-        let config = BotPolicyConfig {
-            id: "missing".to_string(),
-            model_path: Some("missing-model.onnx".to_string()),
-            sample_actions: false,
-            temperature: 1.0,
-            temperature_range: None,
-            discard_base_risk_weight: 0.90,
-            discard_value_risk_range: 0.55,
-            discard_min_risk_weight: 0.25,
-            discard_max_risk_weight: 1.45,
-        };
+        let config =
+            BotPolicyConfig::default_with_model("missing", Some("missing-model.onnx".to_string()));
         let mut rng = rand::rngs::StdRng::seed_from_u64(7);
 
         let decision =
@@ -965,17 +1085,9 @@ mod tests {
 
     #[test]
     fn sample_temperature_uses_configured_range() {
-        let config = BotPolicyConfig {
-            id: "explorer".to_string(),
-            model_path: None,
-            sample_actions: true,
-            temperature: 1.0,
-            temperature_range: Some([1.5, 2.5]),
-            discard_base_risk_weight: 0.90,
-            discard_value_risk_range: 0.55,
-            discard_min_risk_weight: 0.25,
-            discard_max_risk_weight: 1.45,
-        };
+        let mut config = BotPolicyConfig::default_with_model("explorer", None);
+        config.sample_actions = true;
+        config.temperature_range = Some([1.5, 2.5]);
         let mut rng = rand::rngs::StdRng::seed_from_u64(7);
 
         for _ in 0..16 {
@@ -991,17 +1103,9 @@ mod tests {
             action_type: "hu".to_string(),
             tile_ids: Vec::new(),
         }];
-        let config = BotPolicyConfig {
-            id: "missing".to_string(),
-            model_path: Some("missing-model.onnx".to_string()),
-            sample_actions: false,
-            temperature: 1.0,
-            temperature_range: None,
-            discard_base_risk_weight: 0.90,
-            discard_value_risk_range: 0.55,
-            discard_min_risk_weight: 0.25,
-            discard_max_risk_weight: 1.45,
-        };
+        let mut config =
+            BotPolicyConfig::default_with_model("missing", Some("missing-model.onnx".to_string()));
+        config.always_take_legal_hu = false;
 
         let decision = choose_neural_hu_decision_with_config_and_rng(&context, &config, None)
             .expect("hu action");
@@ -1190,6 +1294,110 @@ mod tests {
                 sample_masked_index(&logits, &mask, 1.0, &mut rng).expect("sample should exist");
             assert_ne!(selected, 0);
         }
+    }
+
+    #[test]
+    fn normalized_qualifying_fan_output_does_not_block_verified_eight_fan_hu() {
+        let mut context = base_context();
+        context.minimum_hu_fan = 8;
+        context.claim_options = vec![BotClaimOption {
+            action_type: "hu".to_string(),
+            tile_ids: Vec::new(),
+        }];
+        let mut scores =
+            neural_scores_for_discards([0.0; TILE_KIND_COUNT], [0.0; TILE_KIND_COUNT], 0.0);
+        scores.hu_logits = [1.0, 2.0];
+        // SFT dataset normalizes qualifying_fan_target to [0, 1] = min(fan, 8) / 8.
+        scores.qualifying_fan_value = 0.85;
+
+        let features = crate::bot::features::encode_bot_context_v2(&context);
+        let fixed_config = BotPolicyConfig::default_with_model("fixed", None);
+        let legacy_config = BotPolicyConfig::legacy_with_model("legacy", None);
+
+        assert_eq!(
+            select_neural_hu_choice_with_config(&features, &scores, &context, &fixed_config),
+            Some(NeuralHuChoice::Hu)
+        );
+        assert_eq!(
+            select_neural_hu_choice_with_config(&features, &scores, &context, &legacy_config),
+            Some(NeuralHuChoice::Pass)
+        );
+    }
+
+    #[test]
+    fn joint_tenpai_risk_suppresses_false_alarm_when_opponents_not_tenpai() {
+        let mut context = base_context();
+        let concealed_tiles = tiles(&["w1", "t1"]);
+        context.player.concealed_tile_counts =
+            tile_counts34(concealed_tiles.iter().map(|tile| tile.tile_key.as_str()));
+        context.player.concealed_tiles = concealed_tiles;
+
+        let mut discard_logits = [0.0_f32; TILE_KIND_COUNT];
+        discard_logits[tile_index("w1").expect("w1")] = 1.20;
+        discard_logits[tile_index("t1").expect("t1")] = 1.00;
+
+        let mut risk_logits = [-5.0_f32; TILE_KIND_COUNT];
+        risk_logits[tile_index("w1").expect("w1")] = 5.0;
+        risk_logits[tile_index("t1").expect("t1")] = -5.0;
+
+        let mut scores = neural_scores_for_discards(discard_logits, risk_logits, 0.0);
+        // None of the opponents are tenpai yet (sigmoid(-5) ~= 0.0067).
+        scores.opponent_tenpai_logits = [-5.0, -5.0, -5.0];
+
+        let features = crate::bot::features::encode_bot_context_v2(&context);
+        let joint_risk = RiskConfig {
+            use_joint_tenpai_risk: true,
+            ..RiskConfig::default()
+        };
+        let legacy_risk = RiskConfig {
+            use_joint_tenpai_risk: false,
+            ..RiskConfig::default()
+        };
+
+        let joint_action =
+            select_neural_only_active_turn_action(&context, &features, &scores, Some(&joint_risk))
+                .expect("joint risk action");
+        let legacy_action =
+            select_neural_only_active_turn_action(&context, &features, &scores, Some(&legacy_risk))
+                .expect("legacy risk action");
+
+        // With joint risk, w1 stays best because opponents aren't tenpai; legacy wrongly folds to t1.
+        assert_eq!(normalized_action_tiles(&context, &joint_action), vec!["w1"]);
+        assert_eq!(
+            normalized_action_tiles(&context, &legacy_action),
+            vec!["t1"]
+        );
+    }
+
+    #[test]
+    fn normalized_value_for_risk_modulates_risk_weight_at_realistic_sft_scale() {
+        let mut context = base_context();
+        let concealed_tiles = tiles(&["w1", "t1"]);
+        context.player.concealed_tile_counts =
+            tile_counts34(concealed_tiles.iter().map(|tile| tile.tile_key.as_str()));
+        context.player.concealed_tiles = concealed_tiles;
+
+        let mut discard_logits = [0.0_f32; TILE_KIND_COUNT];
+        discard_logits[tile_index("w1").expect("w1")] = 1.60;
+        discard_logits[tile_index("t1").expect("t1")] = 1.00;
+        let mut risk_logits = [-5.0_f32; TILE_KIND_COUNT];
+        risk_logits[tile_index("w1").expect("w1")] = 5.0;
+        risk_logits[tile_index("t1").expect("t1")] = -5.0;
+
+        // SFT value_target = score_delta / 1000.0 -> +/-50 points is +/-0.05.
+        let low_value_scores = neural_scores_for_discards(discard_logits, risk_logits, -0.05);
+        let high_value_scores = neural_scores_for_discards(discard_logits, risk_logits, 0.05);
+
+        let features = crate::bot::features::encode_bot_context_v2(&context);
+        let low_action =
+            select_neural_only_active_turn_action(&context, &features, &low_value_scores, None)
+                .expect("low value action");
+        let high_action =
+            select_neural_only_active_turn_action(&context, &features, &high_value_scores, None)
+                .expect("high value action");
+
+        assert_eq!(normalized_action_tiles(&context, &low_action), vec!["t1"]);
+        assert_eq!(normalized_action_tiles(&context, &high_action), vec!["w1"]);
     }
 
     #[test]

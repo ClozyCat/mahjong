@@ -56,6 +56,8 @@ pub(crate) struct SampleOutcome {
     pub(crate) won: bool,
     pub(crate) dealt_in: bool,
     pub(crate) round_drawn: bool,
+    #[serde(default)]
+    pub(crate) fan_families: Vec<f32>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -71,6 +73,8 @@ pub(crate) struct SerializableBotContext {
     pub(crate) visible_tile_keys: Vec<String>,
     pub(crate) opponent_discards_by_seat: Vec<Vec<String>>,
     pub(crate) opponent_melds_by_seat: Vec<Vec<Vec<String>>>,
+    #[serde(default)]
+    pub(crate) opponent_meld_open_flags_by_seat: Vec<Vec<bool>>,
     pub(crate) discard_history: Vec<SerializableDiscardEvent>,
     pub(crate) player: SerializableBotPlayer,
     pub(crate) restricted_discard_tile_key: Option<String>,
@@ -92,6 +96,8 @@ pub(crate) struct SerializableBotPlayer {
     pub(crate) concealed_tiles: Vec<SerializableBotTile>,
     pub(crate) concealed_tile_counts: Vec<u8>,
     pub(crate) meld_tile_key_groups: Vec<Vec<String>>,
+    #[serde(default)]
+    pub(crate) meld_open_flags: Vec<bool>,
     pub(crate) flower_count: usize,
 }
 
@@ -129,14 +135,17 @@ impl std::fmt::Display for ReplayError {
 
 impl std::error::Error for ReplayError {}
 
+pub(crate) const FAN_FAMILY_COUNT: usize = 8;
+const QUALIFYING_MINIMUM_FAN: i64 = 8;
+
 pub(crate) fn replay_match_to_samples(
     record: &BotZoneMatch,
 ) -> Result<Vec<TrainingDecisionSampleV2>, ReplayError> {
     let mut state = ReplayState::new(record);
     let mut samples = Vec::new();
     let mut decision_index = 0_u64;
-    let exact_fan = calculate_match_exact_fan(record);
-    let outcome_by_seat = outcome_by_seat(record, exact_fan);
+    let (exact_fan, fan_families) = calculate_match_exact_fan_and_families(record);
+    let outcome_by_seat = outcome_by_seat(record, exact_fan, &fan_families);
 
     for (event_index, event) in record.events.iter().enumerate() {
         match &event.action {
@@ -229,7 +238,16 @@ pub(crate) fn replay_match_to_samples(
                 ));
                 state.apply_add_kong(event.actor, tile_key);
             }
-            BotZoneAction::Hu { .. } => {}
+            BotZoneAction::Hu { .. } => {
+                if state.current_drawn_tile_ids[event.actor].is_some() {
+                    samples.push(state.self_draw_hu_sample(
+                        record,
+                        &mut decision_index,
+                        event.actor,
+                        outcome_by_seat[event.actor].clone(),
+                    ));
+                }
+            }
         }
     }
 
@@ -254,6 +272,7 @@ struct ReplayState {
     discards: [Vec<String>; 4],
     discard_history: Vec<SerializableDiscardEvent>,
     melds: [Vec<Vec<String>>; 4],
+    meld_open_flags: [Vec<bool>; 4],
     wall_tiles_remaining: i64,
     last_discard_tile_key: Option<String>,
     last_discarder_seat: Option<usize>,
@@ -286,6 +305,7 @@ impl ReplayState {
             discards: std::array::from_fn(|_| Vec::new()),
             discard_history: Vec::new(),
             melds: std::array::from_fn(|_| Vec::new()),
+            meld_open_flags: std::array::from_fn(|_| Vec::new()),
             wall_tiles_remaining: (TOTAL_TILE_COUNT - total_dealt).max(0),
             last_discard_tile_key: None,
             last_discarder_seat: None,
@@ -326,7 +346,7 @@ impl ReplayState {
             Vec::new(),
         );
         let legal_actions = legal_discard_actions(&context);
-        let opponent_targets = self.opponent_targets(seat_index);
+        let opponent_targets = self.opponent_targets(record, seat_index);
         let sample = TrainingDecisionSampleV2 {
             schema_version: 2,
             match_id: record.match_id.clone(),
@@ -337,6 +357,42 @@ impl ReplayState {
             context,
             legal_actions,
             label,
+            outcome,
+            opponent_tenpai_target: opponent_targets.tenpai,
+            opponent_risk_target: opponent_targets.risk,
+            opponent_risk_mask: opponent_targets.mask,
+        };
+        *decision_index += 1;
+        sample
+    }
+
+    fn self_draw_hu_sample(
+        &self,
+        record: &BotZoneMatch,
+        decision_index: &mut u64,
+        seat_index: usize,
+        outcome: SampleOutcome,
+    ) -> TrainingDecisionSampleV2 {
+        let context = self.context(
+            record,
+            seat_index,
+            self.self_kong_candidates(seat_index),
+            vec![SerializableClaimOption {
+                action_type: "hu".to_string(),
+                tile_ids: Vec::new(),
+            }],
+        );
+        let opponent_targets = self.opponent_targets(record, seat_index);
+        let sample = TrainingDecisionSampleV2 {
+            schema_version: 2,
+            match_id: record.match_id.clone(),
+            decision_index: *decision_index,
+            seat_index: botzone_seat_to_standard(seat_index),
+            decision_kind: DecisionKind::ActiveTurn,
+            sample_weight: 1.0,
+            context,
+            legal_actions: vec!["claim:hu".to_string(), "pass".to_string()],
+            label: TrainingLabel::Hu,
             outcome,
             opponent_tenpai_target: opponent_targets.tenpai,
             opponent_risk_target: opponent_targets.risk,
@@ -369,7 +425,7 @@ impl ReplayState {
                 legal_actions.dedup();
             }
         }
-        let opponent_targets = self.opponent_targets(seat_index);
+        let opponent_targets = self.opponent_targets(record, seat_index);
         let sample = TrainingDecisionSampleV2 {
             schema_version: 2,
             match_id: record.match_id.clone(),
@@ -425,7 +481,7 @@ impl ReplayState {
             }
             let context = self.context(record, seat_index, Vec::new(), claim_options);
             let legal_actions = claim_legal_actions(&context);
-            let opponent_targets = self.opponent_targets(seat_index);
+            let opponent_targets = self.opponent_targets(record, seat_index);
             samples.push(TrainingDecisionSampleV2 {
                 schema_version: 2,
                 match_id: record.match_id.clone(),
@@ -468,7 +524,7 @@ impl ReplayState {
             let mut context = self.context(record, seat_index, Vec::new(), Vec::new());
             context.last_discard_tile_key = Some(tile_key.to_string());
             context.add_kong_risk_tiles.insert(tile_key.to_string());
-            let opponent_targets = self.opponent_targets(seat_index);
+            let opponent_targets = self.opponent_targets(record, seat_index);
             samples.push(TrainingDecisionSampleV2 {
                 schema_version: 2,
                 match_id: record.match_id.clone(),
@@ -511,11 +567,13 @@ impl ReplayState {
             visible_tile_keys: self.visible_tile_keys(),
             opponent_discards_by_seat: reorder_botzone_seat_array(&self.discards),
             opponent_melds_by_seat: reorder_botzone_seat_array(&self.melds),
+            opponent_meld_open_flags_by_seat: reorder_botzone_seat_array(&self.meld_open_flags),
             discard_history: self.discard_history.clone(),
             player: SerializableBotPlayer {
                 concealed_tiles: self.hands[seat_index].clone(),
                 concealed_tile_counts: tile_counts(&self.hands[seat_index]).to_vec(),
                 meld_tile_key_groups: self.melds[seat_index].clone(),
+                meld_open_flags: self.meld_open_flags[seat_index].clone(),
                 flower_count: 0,
             },
             restricted_discard_tile_key: self.restricted_discard_tile_key.clone(),
@@ -527,8 +585,10 @@ impl ReplayState {
         }
     }
 
-    fn opponent_targets(&self, seat_index: usize) -> OpponentTargets {
+    fn opponent_targets(&self, record: &BotZoneMatch, seat_index: usize) -> OpponentTargets {
         let standard_current = botzone_seat_to_standard(seat_index);
+        let standard_dealer = botzone_seat_to_standard(record.dealer_seat);
+        let visible_tiles = self.visible_tile_keys();
         let mut tenpai = Vec::with_capacity(3);
         let mut risk = Vec::with_capacity(3);
         let mut mask = Vec::with_capacity(3);
@@ -542,14 +602,27 @@ impl ReplayState {
                 .map(|tile| tile.tile_key.clone())
                 .collect::<Vec<_>>();
             let melds = &self.melds[opponent_seat];
-            let is_tenpai = is_tenpai_hand_with_melds(&concealed_tile_keys, melds);
-            tenpai.push(if is_tenpai { 1.0 } else { 0.0 });
-            risk.push(opponent_winning_tile_targets(
+            let open_flags = &self.meld_open_flags[opponent_seat];
+            let shape_tenpai = is_tenpai_hand_with_melds(&concealed_tile_keys, melds);
+            let opponent_seat_wind = standard_seat_wind(standard_opponent, standard_dealer);
+            let winning_targets = opponent_qualifying_winning_tile_targets(
                 &concealed_tile_keys,
                 melds,
-                is_tenpai,
-            ));
-            mask.push(vec![if is_tenpai { 1.0 } else { 0.0 }; TILE_KIND_COUNT]);
+                open_flags,
+                &visible_tiles,
+                opponent_seat_wind,
+                &record.round_wind,
+                opponent_seat,
+                seat_index,
+                shape_tenpai,
+            );
+            let is_qualified_tenpai = winning_targets.iter().any(|&v| v > 0.5);
+            tenpai.push(if is_qualified_tenpai { 1.0 } else { 0.0 });
+            risk.push(winning_targets);
+            mask.push(vec![
+                if is_qualified_tenpai { 1.0 } else { 0.0 };
+                TILE_KIND_COUNT
+            ]);
         }
 
         OpponentTargets { tenpai, risk, mask }
@@ -641,6 +714,7 @@ impl ReplayState {
             self.remove_one_tile(seat, tile_key);
         }
         self.melds[seat].push(vec![tile_key.to_string(); count + 1]);
+        self.meld_open_flags[seat].push(true);
         self.current_drawn_tile_ids[seat] = None;
         self.restricted_discard_tile_key = Some(tile_key.to_string());
         self.last_discard_tile_key = None;
@@ -652,6 +726,7 @@ impl ReplayState {
             self.remove_one_tile(seat, tile_key);
         }
         self.melds[seat].push(vec![tile_key.to_string(); 4]);
+        self.meld_open_flags[seat].push(false);
         self.current_drawn_tile_ids[seat] = None;
     }
 
@@ -674,6 +749,7 @@ impl ReplayState {
             }
         }
         self.melds[seat].push(chow_group(&last_discard, middle_tile_key));
+        self.meld_open_flags[seat].push(true);
         self.current_drawn_tile_ids[seat] = None;
         self.restricted_discard_tile_key = Some(last_discard);
         self.last_discard_tile_key = None;
@@ -830,7 +906,11 @@ fn self_kong_legal_actions(context: &SerializableBotContext) -> Vec<String> {
     actions
 }
 
-fn outcome_by_seat(record: &BotZoneMatch, exact_fan: i64) -> [SampleOutcome; 4] {
+fn outcome_by_seat(
+    record: &BotZoneMatch,
+    exact_fan: i64,
+    fan_families: &[f32],
+) -> [SampleOutcome; 4] {
     let (score_delta, round_drawn) = match &record.result {
         BotZoneResult::Hu { score_delta, .. } => (*score_delta, false),
         BotZoneResult::Huang { score_delta } => (*score_delta, true),
@@ -847,6 +927,11 @@ fn outcome_by_seat(record: &BotZoneMatch, exact_fan: i64) -> [SampleOutcome; 4] 
         won: winner == Some(seat),
         dealt_in: false,
         round_drawn,
+        fan_families: if winner == Some(seat) {
+            fan_families.to_vec()
+        } else {
+            vec![0.0; FAN_FAMILY_COUNT]
+        },
     })
 }
 
@@ -859,7 +944,7 @@ fn play_event_deals_in(record: &BotZoneMatch, event_index: usize, actor: usize) 
         })
 }
 
-fn calculate_match_exact_fan(record: &BotZoneMatch) -> i64 {
+fn calculate_match_exact_fan_and_families(record: &BotZoneMatch) -> (i64, Vec<f32>) {
     let mut state = ReplayState::new(record);
     for event in &record.events {
         match &event.action {
@@ -888,21 +973,29 @@ fn calculate_match_exact_fan(record: &BotZoneMatch) -> i64 {
                 } else {
                     "discard"
                 };
-                return calculate_exact_fan(&state, record, event.actor, tile_key, win_type);
+                return calculate_exact_fan_and_families(
+                    &state,
+                    record,
+                    event.actor,
+                    tile_key,
+                    win_type,
+                );
             }
         }
     }
-    0
+    (0, vec![0.0; FAN_FAMILY_COUNT])
 }
 
-fn calculate_exact_fan(
+fn calculate_exact_fan_and_families(
     state: &ReplayState,
     record: &BotZoneMatch,
     winner_seat: usize,
     winning_tile: &str,
     win_type: &str,
-) -> i64 {
-    let seat_wind = seat_index_to_wind(winner_seat);
+) -> (i64, Vec<f32>) {
+    let standard_winner = botzone_seat_to_standard(winner_seat);
+    let standard_dealer = botzone_seat_to_standard(record.dealer_seat);
+    let seat_wind = standard_seat_wind(standard_winner, standard_dealer);
     let round_wind = &record.round_wind;
 
     let concealed_tile_keys: Vec<String> = state.hands[winner_seat]
@@ -910,13 +1003,25 @@ fn calculate_exact_fan(
         .map(|t| t.tile_key.clone())
         .collect();
     let meld_tile_key_groups = state.melds[winner_seat].clone();
+    let meld_open_flags = &state.meld_open_flags[winner_seat];
+    let open_meld_tile_key_groups: Vec<Vec<String>> = meld_tile_key_groups
+        .iter()
+        .enumerate()
+        .filter(|(idx, _)| meld_open_flags.get(*idx).copied().unwrap_or(true))
+        .map(|(_, meld)| meld.clone())
+        .collect();
+    let incoming_tile = if win_type == "self_draw" {
+        None
+    } else {
+        Some(winning_tile)
+    };
 
     let features = extract_hand_features(
         &concealed_tile_keys,
         &meld_tile_key_groups,
-        None,
-        Some(winning_tile),
-        Some(&seat_wind),
+        Some(meld_open_flags),
+        incoming_tile,
+        Some(seat_wind),
         Some(round_wind),
         None,
     );
@@ -926,42 +1031,111 @@ fn calculate_exact_fan(
         ..Default::default()
     };
 
+    let mut tile_keys = concealed_tile_keys.clone();
+    if let Some(tile) = incoming_tile {
+        tile_keys.push(tile.to_string());
+    }
+    tile_keys.extend(meld_tile_key_groups.iter().flatten().cloned());
+
     let input = EvaluationInput {
         win_type: win_type.to_string(),
         winner_seat: Some(winner_seat),
-        discarder_seat: state.last_discarder_seat,
+        discarder_seat: if win_type == "self_draw" {
+            None
+        } else {
+            state.last_discarder_seat
+        },
         ready_hand_declared: false,
         flower_count: 0,
         seat_count: 4,
         features,
         timing,
-        kong_entries: Vec::new(), // 简化处理，暂不追踪历史杠分明细
-        tile_keys: [
-            concealed_tile_keys.clone(),
-            meld_tile_key_groups.iter().flatten().cloned().collect(),
-        ]
-        .concat(),
+        kong_entries: Vec::new(),
+        tile_keys,
         visible_tile_keys: state.visible_tile_keys(),
         concealed_tile_keys,
-        meld_tile_key_groups: meld_tile_key_groups.clone(),
-        open_meld_tile_key_groups: meld_tile_key_groups,
-        incoming_tile: Some(winning_tile.to_string()),
+        meld_tile_key_groups,
+        open_meld_tile_key_groups,
+        incoming_tile: incoming_tile.map(ToString::to_string),
         winning_tile: Some(winning_tile.to_string()),
         decompositions: Vec::new(),
     };
 
-    evaluate_fans(input).fan_total
+    let result = evaluate_fans(input);
+    let families = fan_family_targets(&result.fan_keys, result.minimum_qualifying_fan_total);
+    (result.minimum_qualifying_fan_total, families)
 }
 
-fn seat_index_to_wind(index: usize) -> String {
-    match index {
-        0 => "east",
-        1 => "north",
-        2 => "west",
-        3 => "south",
-        _ => "east",
+fn fan_family_targets(fan_keys: &[String], fan_total: i64) -> Vec<f32> {
+    let mut targets = vec![0.0_f32; FAN_FAMILY_COUNT];
+    for key in fan_keys {
+        match key.as_str() {
+            "full_flush" | "half_flush" | "all_green" | "all_honours" | "reversible_tiles"
+            | "nine_gates" => targets[0] = 1.0,
+            "all_pungs"
+            | "all_terminals_and_honours"
+            | "all_terminals"
+            | "all_even_pungs"
+            | "three_concealed_pungs"
+            | "four_concealed_pungs"
+            | "triple_pung"
+            | "mixed_shifted_pungs"
+            | "pure_shifted_pungs"
+            | "four_pure_shifted_pungs"
+            | "two_concealed_kongs"
+            | "mixed_kongs"
+            | "two_melded_kongs"
+            | "three_kongs"
+            | "four_kongs" => targets[1] = 1.0,
+            "seven_pairs"
+            | "seven_shifted_pairs"
+            | "lesser_honours_and_knitted_tiles"
+            | "greater_honours_and_knitted_tiles"
+            | "thirteen_orphans" => targets[2] = 1.0,
+            "pure_straight"
+            | "mixed_straight"
+            | "knitted_straight"
+            | "mixed_triple_chow"
+            | "pure_triple_chow"
+            | "quadruple_chow"
+            | "mixed_shifted_chows"
+            | "pure_shifted_chows"
+            | "four_pure_shifted_chows"
+            | "three_suited_terminal_chows"
+            | "pure_terminal_chows" => targets[3] = 1.0,
+            "dragon_pung"
+            | "two_dragon_pungs"
+            | "little_three_dragons"
+            | "big_three_dragons"
+            | "seat_wind"
+            | "prevalent_wind"
+            | "big_three_winds"
+            | "little_four_winds"
+            | "big_four_winds" => targets[4] = 1.0,
+            "concealed_hand"
+            | "fully_concealed_hand"
+            | "melded_hand"
+            | "out_with_replacement_tile"
+            | "last_tile_draw"
+            | "last_tile_claim"
+            | "robbing_the_kong" => targets[5] = 1.0,
+            "all_types"
+            | "all_simples"
+            | "outside_hand"
+            | "all_fives"
+            | "upper_four"
+            | "lower_four"
+            | "upper_tiles"
+            | "middle_tiles"
+            | "lower_tiles"
+            | "all_chows" => targets[6] = 1.0,
+            _ => {}
+        }
     }
-    .to_string()
+    if fan_total >= 16 {
+        targets[7] = 1.0;
+    }
+    targets
 }
 
 fn botzone_seat_to_standard(seat_index: usize) -> usize {
@@ -1000,23 +1174,74 @@ fn reorder_botzone_seat_array<T: Clone>(values: &[T; 4]) -> Vec<T> {
         .collect()
 }
 
-fn opponent_winning_tile_targets(
+#[allow(clippy::too_many_arguments)]
+fn opponent_qualifying_winning_tile_targets(
     concealed_tile_keys: &[String],
     melds: &[Vec<String>],
-    is_tenpai: bool,
+    meld_open_flags: &[bool],
+    visible_tile_keys: &[String],
+    seat_wind: &str,
+    round_wind: &str,
+    opponent_seat: usize,
+    discarder_seat: usize,
+    is_shape_tenpai: bool,
 ) -> Vec<f32> {
-    if !is_tenpai {
+    if !is_shape_tenpai {
         return vec![0.0; TILE_KIND_COUNT];
     }
+    let open_melds: Vec<Vec<String>> = melds
+        .iter()
+        .enumerate()
+        .filter(|(idx, _)| meld_open_flags.get(*idx).copied().unwrap_or(true))
+        .map(|(_, meld)| meld.clone())
+        .collect();
+    let meld_flat: Vec<String> = melds.iter().flatten().cloned().collect();
+
     TILE_KEYS
         .iter()
         .map(|tile_key| {
-            let mut simulated = concealed_tile_keys.to_vec();
+            let mut simulated = Vec::with_capacity(concealed_tile_keys.len() + 1);
+            simulated.extend_from_slice(concealed_tile_keys);
             simulated.push((*tile_key).to_string());
-            if decompose_winning_hand_with_melds(&simulated, melds).is_empty() {
-                0.0
-            } else {
+            let decompositions = decompose_winning_hand_with_melds(&simulated, melds);
+            if decompositions.is_empty() {
+                return 0.0;
+            }
+            let features = extract_hand_features(
+                concealed_tile_keys,
+                melds,
+                Some(meld_open_flags),
+                Some(tile_key),
+                Some(seat_wind),
+                Some(round_wind),
+                Some(&decompositions),
+            );
+            let mut all_tiles = Vec::with_capacity(simulated.len() + meld_flat.len());
+            all_tiles.extend(simulated);
+            all_tiles.extend(meld_flat.iter().cloned());
+            let input = EvaluationInput {
+                win_type: "discard".to_string(),
+                winner_seat: Some(opponent_seat),
+                discarder_seat: Some(discarder_seat),
+                ready_hand_declared: false,
+                flower_count: 0,
+                seat_count: 4,
+                features,
+                timing: TimingFeatures::default(),
+                kong_entries: Vec::new(),
+                tile_keys: all_tiles,
+                visible_tile_keys: visible_tile_keys.to_vec(),
+                concealed_tile_keys: concealed_tile_keys.to_vec(),
+                meld_tile_key_groups: melds.to_vec(),
+                open_meld_tile_key_groups: open_melds.clone(),
+                incoming_tile: Some((*tile_key).to_string()),
+                winning_tile: Some((*tile_key).to_string()),
+                decompositions,
+            };
+            if evaluate_fans(input).minimum_qualifying_fan_total >= QUALIFYING_MINIMUM_FAN {
                 1.0
+            } else {
+                0.0
             }
         })
         .collect()
@@ -1664,5 +1889,89 @@ Score 0 0 0 0
             active_turn.context.cumulative_scores,
             vec![100, -110, 30, -20]
         );
+    }
+
+    #[test]
+    fn sub_eight_fan_shape_tenpai_is_excluded_from_opponent_targets() {
+        // Player 1 has an open chow (W1 W2 W3) plus plain shapes waiting on T5/T8 -> < 8 fan (not a legal discard Hu).
+        let record = parse_match(
+            r#"
+Match sub eight fan tenpai
+Wind F1
+Player 0 Deal W1 W9 T9 B1 B9 F1 F2 F3 F4 J1 J2 J3 W5
+Player 1 Deal W2 W3 W4 W5 W6 T6 T7 B2 B3 B4 B7 B7 W1
+Player 2 Deal W1 W4 W7 T2 T5 T8 B3 B6 B9 F1 F2 F3 J1
+Player 3 Deal W1 W4 W7 T2 T5 T8 B3 B6 B9 F1 F2 F3 J2
+Player 0 Draw W1
+Player 0 Play W1
+Player 1 Chi W2
+Player 1 Play W1
+Player 2 Draw J3
+Player 2 Play J3
+Score 0 0 0 0
+"#,
+        )
+        .expect("match");
+        let samples = replay_match_to_samples(&record).expect("samples");
+        let p2_discard = samples
+            .iter()
+            .find(|sample| {
+                sample.seat_index == 2
+                    && sample.decision_kind == DecisionKind::ActiveTurn
+                    && sample.label
+                        == TrainingLabel::Discard {
+                            tile_key: "white".to_string(),
+                        }
+            })
+            .expect("player 2 discard sample");
+
+        // Standard seat 3 (BotZone player 1) is relative offset +1 from seat 2.
+        // Its hand is shape-tenpai on T5/T8, but cannot reach 8 fan on discard, so tenpai target must be 0.
+        assert_eq!(p2_discard.opponent_tenpai_target[0], 0.0);
+        assert!(p2_discard.opponent_risk_target[0].iter().all(|&v| v == 0.0));
+    }
+
+    #[test]
+    fn self_draw_hu_emits_active_turn_hu_sample() {
+        let record = parse_match(SELF_DRAW_MATCH).expect("match");
+        let samples = replay_match_to_samples(&record).expect("samples");
+
+        let self_hu = samples
+            .iter()
+            .find(|sample| {
+                sample.decision_kind == DecisionKind::ActiveTurn && sample.label == TrainingLabel::Hu
+            })
+            .expect("self draw hu sample");
+        assert!(self_hu.legal_actions.iter().any(|a| a == "claim:hu"));
+    }
+
+    #[test]
+    fn concealed_kong_marks_meld_open_flag_false() {
+        let record = parse_match(
+            r#"
+Match angang flag
+Player 0 Deal W1 W1 W1 W1 W2 W3
+Player 1 Deal T1 T2 T3
+Player 2 Deal B1 B2 B3
+Player 3 Deal J1 J2 J3
+Player 0 AnGang W1
+Player 0 Draw W4
+Player 0 Play W2
+Score 0 0 0 0
+"#,
+        )
+        .expect("match");
+        let samples = replay_match_to_samples(&record).expect("samples");
+        let discard = samples
+            .iter()
+            .find(|sample| {
+                sample.seat_index == 0
+                    && sample.label
+                        == TrainingLabel::Discard {
+                            tile_key: "w2".to_string(),
+                        }
+            })
+            .expect("discard after angang");
+        assert_eq!(discard.context.player.meld_open_flags, vec![false]);
     }
 }

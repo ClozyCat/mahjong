@@ -84,6 +84,41 @@ pub fn add_bot_seats_for_test(room: &mut RoomState) {
     room.seats.sort_by_key(|seat| seat.seat_index);
 }
 
+pub fn start_single_round_in_room_state(
+    room: &mut RoomState,
+    dealer_seat: usize,
+    round_wind: &str,
+    seed: u64,
+) -> Result<(), String> {
+    let mut cumulative_scores = BTreeMap::new();
+    for seat in 0..MAX_SEATS {
+        cumulative_scores.insert(seat, 0);
+    }
+    let mut match_state = MatchState {
+        seed,
+        prevailing_wind: round_wind.to_string(),
+        hand_number: 1,
+        dealer_seat,
+        dealer_repeat_count: 0,
+        cumulative_scores,
+        match_finished: false,
+        last_completed_round_id: None,
+        statistics: Default::default(),
+        extra_time_pool: Default::default(),
+    };
+    match_state.sync_statistics_to_cumulative_scores();
+    match_state.initialize_extra_time_pool();
+    room.match_state = Some(match_state);
+    start_round_in_room_state(
+        room,
+        dealer_seat,
+        round_wind,
+        format!("{round_wind}-1-dealer-{dealer_seat}-{seed}"),
+        seed,
+    );
+    Ok(())
+}
+
 pub fn start_match_in_room_state(
     room: &mut RoomState,
     dealer_seat: usize,

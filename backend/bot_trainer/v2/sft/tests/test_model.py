@@ -9,10 +9,11 @@ from model import (
 
 class TestLightweightActor:
     def test_forward_shapes(self):
-        m = build_model(ModelConfig())
+        cfg = ModelConfig()
+        m = build_model(cfg)
         m.eval()
-        tp = torch.zeros((2, 10, 34))
-        sf = torch.zeros((2, ModelConfig().scalar_feature_count))
+        tp = torch.zeros((2, cfg.tile_plane_count, 34))
+        sf = torch.zeros((2, cfg.scalar_feature_count))
         ds = torch.zeros((2, 32, 40))
         out = m(tp, sf, ds)
         assert out["discard_logits"].shape == (2, 34)
@@ -23,6 +24,8 @@ class TestLightweightActor:
         assert out["fan_value"].shape == (2, 1)
         assert out["qualifying_fan_value"].shape == (2, 1)
         assert out["value"].shape == (2, 1)
+        assert out["score_bucket_logits"].shape == (2, 5)
+        assert out["fan_family_logits"].shape == (2, 8)
         assert out["opponent_tenpai_logits"].shape == (2, 3)
         assert out["opponent_risk_logits"].shape == (2, 3, 34)
 
@@ -35,18 +38,20 @@ class TestLightweightActor:
     def test_build_model_param_count(self):
         m = build_model(ModelConfig())
         total = sum(p.numel() for p in m.parameters())
-        assert total < 3_000_000, f"Model too large: {total}"
+        assert total < 4_000_000, f"Model too large: {total}"
 
     def test_training_heads_separate(self):
         m = build_model(ModelConfig())
         assert "value" not in LightweightActor.ONNX_OUTPUT_NAMES
         assert "value" in m.TRAINING_ONLY_HEADS
+        assert "fan_family_logits" in m.TRAINING_ONLY_HEADS
 
     def test_value_for_risk_reuses_trained_value_head(self):
-        m = build_model(ModelConfig())
+        cfg = ModelConfig()
+        m = build_model(cfg)
         m.train()
-        tp = torch.randn((2, 10, 34))
-        sf = torch.randn((2, ModelConfig().scalar_feature_count))
+        tp = torch.randn((2, cfg.tile_plane_count, 34))
+        sf = torch.randn((2, cfg.scalar_feature_count))
         ds = torch.randn((2, 32, 40))
 
         out = m(tp, sf, ds)
@@ -65,16 +70,18 @@ class TestLightweightActor:
         assert all(grad is not None for grad in value_head_grads)
 
     def test_gradient_flow(self):
-        m = build_model(ModelConfig())
+        cfg = ModelConfig()
+        m = build_model(cfg)
         m.train()
-        tp = torch.randn((2, 10, 34))
-        sf = torch.randn((2, ModelConfig().scalar_feature_count))
+        tp = torch.randn((2, cfg.tile_plane_count, 34))
+        sf = torch.randn((2, cfg.scalar_feature_count))
         ds = torch.randn((2, 32, 40))
         out = m(tp, sf, ds)
         loss = (
             out["discard_logits"].sum()
             + out["value"].sum()
             + out["score_bucket_logits"].sum()
+            + out["fan_family_logits"].sum()
             + out["opponent_tenpai_logits"].sum()
             + out["opponent_risk_logits"].sum()
         )
@@ -88,10 +95,11 @@ class TestLightweightActor:
         assert grad_count > 0, "No parameters received gradients"
 
     def test_score_bucket_head_present(self):
-        m = build_model(ModelConfig())
+        cfg = ModelConfig()
+        m = build_model(cfg)
         m.eval()
-        tp = torch.zeros((2, 10, 34))
-        sf = torch.zeros((2, ModelConfig().scalar_feature_count))
+        tp = torch.zeros((2, cfg.tile_plane_count, 34))
+        sf = torch.zeros((2, cfg.scalar_feature_count))
         ds = torch.zeros((2, 32, 40))
         out = m(tp, sf, ds)
         assert "score_bucket_logits" in out
@@ -122,18 +130,19 @@ class TestGRUEncoder:
 
 class TestSuitFusionTileEncoder:
     def test_output_shape(self):
-        enc = SuitFusionTileEncoder(10, embedding_size=256, channels=64)
-        x = torch.zeros((2, 10, 34))
-        out = enc(x)
+        enc = SuitFusionTileEncoder(24, embedding_size=256, channels=96)
+        x = torch.zeros((2, 24, 34))
+        out, tile_map = enc.forward_with_map(x)
         assert out.shape == (2, 256)
+        assert tile_map.shape == (2, 96, 34)
 
     def test_shared_backbone(self):
         backbone = nn.Sequential(
-            nn.Conv1d(10, 64, 3, padding=1), nn.ReLU(), ResidualConvBlock(64)
+            nn.Conv1d(24, 96, 3, padding=1), nn.SiLU(), ResidualConvBlock(96)
         )
         enc = SuitFusionTileEncoder(
-            10, embedding_size=256, channels=64, shared_backbone=backbone
+            24, embedding_size=256, channels=96, shared_backbone=backbone
         )
-        x = torch.zeros((2, 10, 34))
+        x = torch.zeros((2, 24, 34))
         out = enc(x)
         assert out.shape == (2, 256)

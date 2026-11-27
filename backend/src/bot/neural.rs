@@ -1,15 +1,14 @@
 use super::action_space::{CLAIM_ACTION_COUNT, SELF_KONG_ACTION_COUNT, TILE_KIND_COUNT};
 #[cfg(test)]
 use super::action_space::{CLAIM_ACTIONS, tile_index};
-#[cfg(test)]
 use super::context::BotContext;
 #[cfg(test)]
 use super::context::BotTileView;
 #[cfg(test)]
 use super::features::encode_bot_context_v2;
 use super::features::{
-    BotFeaturesV2, discard_event_feature_count_v2, discard_sequence_length_v2,
-    scalar_feature_count_v2, tile_plane_count_v2,
+    BotFeaturesV2, FeatureVersion, discard_event_feature_count_v2, discard_sequence_length_v2,
+    encode_bot_context_for_version, tile_plane_count_v3,
 };
 use ort::{session::Session, value::Tensor};
 use std::{
@@ -27,9 +26,21 @@ const DEFAULT_MODEL_PATHS: [&str; 4] = [
     "sft.onnx",
 ];
 const MODEL_PATH_ENV: &str = "MAHJONG_BOT_MODEL_PATH";
+const FALLBACK_TENPAI_LOGIT: f32 = 20.0;
+
+#[derive(Clone, Debug, PartialEq)]
+pub struct NeuralOutputSnapshot {
+    pub value_for_risk: f32,
+    pub qualifying_fan_value: f32,
+    pub hu_logits: [f32; 2],
+    pub opponent_tenpai_logits: [f32; 3],
+    pub max_conditional_risk_prob: f32,
+    pub max_joint_deal_in_prob: f32,
+}
 
 #[derive(Clone, Debug, PartialEq)]
 pub(crate) struct NeuralDecisionScores {
+    pub(crate) feature_version: FeatureVersion,
     pub(crate) discard_logits: [f32; TILE_KIND_COUNT],
     pub(crate) claim_logits: [f32; CLAIM_ACTION_COUNT],
     pub(crate) self_kong_logits: [f32; SELF_KONG_ACTION_COUNT],
@@ -37,6 +48,106 @@ pub(crate) struct NeuralDecisionScores {
     pub(crate) value_for_risk: f32,
     pub(crate) qualifying_fan_value: f32,
     pub(crate) risk_logits: [f32; TILE_KIND_COUNT],
+    pub(crate) opponent_tenpai_logits: [f32; 3],
+    pub(crate) opponent_risk_logits: [[f32; TILE_KIND_COUNT]; 3],
+}
+
+impl NeuralDecisionScores {
+    pub(crate) fn joint_deal_in_probabilities(&self) -> [f32; TILE_KIND_COUNT] {
+        let mut result = [0.0_f32; TILE_KIND_COUNT];
+        let tenpai_probs = [
+            sigmoid_f32(self.opponent_tenpai_logits[0]).unwrap_or(0.0),
+            sigmoid_f32(self.opponent_tenpai_logits[1]).unwrap_or(0.0),
+            sigmoid_f32(self.opponent_tenpai_logits[2]).unwrap_or(0.0),
+        ];
+        for tile_index in 0..TILE_KIND_COUNT {
+            let mut safe_prob = 1.0_f32;
+            for opponent_index in 0..3 {
+                let cond_risk =
+                    sigmoid_f32(self.opponent_risk_logits[opponent_index][tile_index])
+                        .unwrap_or(0.0);
+                let deal_in = (tenpai_probs[opponent_index] * cond_risk).clamp(0.0, 1.0);
+                safe_prob *= 1.0 - deal_in;
+            }
+            result[tile_index] = (1.0 - safe_prob).clamp(0.0, 1.0);
+        }
+        result
+    }
+}
+
+pub fn inspect_bot_context_neural_scores(
+    model_path: Option<&Path>,
+    context: &BotContext,
+) -> Option<NeuralOutputSnapshot> {
+    let (scores, _) = neural_decision_scores_for_context(model_path, context)?;
+    let joint_probs = scores.joint_deal_in_probabilities();
+    let max_conditional_risk_prob = scores
+        .risk_logits
+        .iter()
+        .filter_map(|&logit| sigmoid_f32(logit))
+        .fold(0.0_f32, f32::max);
+    let max_joint_deal_in_prob = joint_probs.iter().copied().fold(0.0_f32, f32::max);
+    Some(NeuralOutputSnapshot {
+        value_for_risk: scores.value_for_risk,
+        qualifying_fan_value: scores.qualifying_fan_value,
+        hu_logits: scores.hu_logits,
+        opponent_tenpai_logits: scores.opponent_tenpai_logits,
+        max_conditional_risk_prob,
+        max_joint_deal_in_prob,
+    })
+}
+
+pub(crate) fn neural_decision_scores_for_context(
+    model_path: Option<&Path>,
+    context: &BotContext,
+) -> Option<(NeuralDecisionScores, BotFeaturesV2)> {
+    let version = model_feature_version(model_path);
+    let features = encode_bot_context_for_version(context, version);
+    let scores = neural_decision_scores_for_features(model_path, features.clone())?;
+    Some((scores, features))
+}
+
+pub(crate) fn model_feature_version(model_path: Option<&Path>) -> FeatureVersion {
+    let resolved = model_path
+        .map(resolve_model_path)
+        .unwrap_or_else(model_path_from_env);
+    detect_feature_version_from_manifest(&resolved)
+}
+
+fn detect_feature_version_from_manifest(model_path: &Path) -> FeatureVersion {
+    let Some(file_name) = model_path.file_name().and_then(|value| value.to_str()) else {
+        return FeatureVersion::V2;
+    };
+    let manifest_path = model_path.with_file_name(format!("{file_name}.manifest.json"));
+    let Ok(raw) = std::fs::read_to_string(manifest_path) else {
+        return FeatureVersion::V2;
+    };
+    let Ok(value) = serde_json::from_str::<serde_json::Value>(&raw) else {
+        return FeatureVersion::V2;
+    };
+    let tile_planes = value
+        .get("model_config")
+        .and_then(|cfg| cfg.get("tile_plane_count"))
+        .and_then(|v| v.as_u64())
+        .unwrap_or(10) as usize;
+    if tile_planes == tile_plane_count_v3() {
+        FeatureVersion::V3
+    } else {
+        FeatureVersion::V2
+    }
+}
+
+pub(crate) fn sigmoid_f32(logit: f32) -> Option<f32> {
+    if !logit.is_finite() {
+        return None;
+    }
+    if logit >= 0.0 {
+        let z = (-logit).exp();
+        Some(1.0 / (1.0 + z))
+    } else {
+        let z = logit.exp();
+        Some(z / (1.0 + z))
+    }
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -264,6 +375,9 @@ fn load_session(model_path: &Path) -> Result<Session, ()> {
 
 fn run_session(session: &mut Session, features: BotFeaturesV2) -> Result<NeuralDecisionScores, ()> {
     let BotFeaturesV2 {
+        feature_version,
+        tile_plane_count,
+        scalar_feature_count,
         tile_planes,
         scalar_features,
         discard_sequence,
@@ -271,14 +385,10 @@ fn run_session(session: &mut Session, features: BotFeaturesV2) -> Result<NeuralD
         hu_mask: _hu_mask,
         ..
     } = features;
-    let tile_planes = Tensor::from_array((
-        [1_usize, tile_plane_count_v2(), TILE_KIND_COUNT],
-        tile_planes,
-    ))
-    .map_err(|_| ())?;
+    let tile_planes = Tensor::from_array(([1_usize, tile_plane_count, TILE_KIND_COUNT], tile_planes))
+        .map_err(|_| ())?;
     let scalar_features =
-        Tensor::from_array(([1_usize, scalar_feature_count_v2()], scalar_features))
-            .map_err(|_| ())?;
+        Tensor::from_array(([1_usize, scalar_feature_count], scalar_features)).map_err(|_| ())?;
     let discard_sequence = Tensor::from_array((
         [
             1_usize,
@@ -296,29 +406,47 @@ fn run_session(session: &mut Session, features: BotFeaturesV2) -> Result<NeuralD
         ])
         .map_err(|_| ())?;
 
+    let (risk_logits, opponent_risk_logits) = extract_opponent_risk_outputs(&outputs)?;
+    let opponent_tenpai_logits = extract_opponent_tenpai_logits(&outputs);
+
     Ok(NeuralDecisionScores {
+        feature_version,
         discard_logits: extract_array::<TILE_KIND_COUNT>(&outputs, "discard_logits")?,
         claim_logits: extract_array::<CLAIM_ACTION_COUNT>(&outputs, "claim_logits")?,
         self_kong_logits: extract_array::<SELF_KONG_ACTION_COUNT>(&outputs, "self_kong_logits")?,
         hu_logits: extract_array::<2>(&outputs, "hu_logits")?,
         value_for_risk: extract_array::<1>(&outputs, "value_for_risk")?[0],
         qualifying_fan_value: extract_array::<1>(&outputs, "qualifying_fan_value")?[0],
-        risk_logits: extract_risk_logits(&outputs)?,
+        risk_logits,
+        opponent_tenpai_logits,
+        opponent_risk_logits,
     })
 }
 
-fn extract_risk_logits(
-    outputs: &ort::session::SessionOutputs,
-) -> Result<[f32; TILE_KIND_COUNT], ()> {
-    extract_opponent_risk_logits(outputs)
+fn extract_opponent_tenpai_logits(outputs: &ort::session::SessionOutputs) -> [f32; 3] {
+    extract_array::<3>(outputs, "opponent_tenpai_logits").unwrap_or([FALLBACK_TENPAI_LOGIT; 3])
 }
 
-fn extract_opponent_risk_logits(
+fn extract_opponent_risk_outputs(
     outputs: &ort::session::SessionOutputs,
-) -> Result<[f32; TILE_KIND_COUNT], ()> {
+) -> Result<([f32; TILE_KIND_COUNT], [[f32; TILE_KIND_COUNT]; 3]), ()> {
     let output = &outputs["opponent_risk_logits"];
     let (_, values) = output.try_extract_tensor::<f32>().map_err(|_| ())?;
-    aggregate_opponent_risk_logits(values)
+    let per_opponent = split_opponent_risk_logits(values)?;
+    let aggregated = aggregate_opponent_risk_logits(values)?;
+    Ok((aggregated, per_opponent))
+}
+
+fn split_opponent_risk_logits(values: &[f32]) -> Result<[[f32; TILE_KIND_COUNT]; 3], ()> {
+    if values.len() < 3 * TILE_KIND_COUNT {
+        return Err(());
+    }
+    let mut per_opponent = [[0.0_f32; TILE_KIND_COUNT]; 3];
+    for opponent_index in 0..3 {
+        let start = opponent_index * TILE_KIND_COUNT;
+        per_opponent[opponent_index].copy_from_slice(&values[start..start + TILE_KIND_COUNT]);
+    }
+    Ok(per_opponent)
 }
 
 fn aggregate_opponent_risk_logits(values: &[f32]) -> Result<[f32; TILE_KIND_COUNT], ()> {
@@ -428,8 +556,10 @@ fn run_session_batched(
     features_batch: &[BotFeaturesV2],
 ) -> Result<Vec<NeuralDecisionScores>, ()> {
     let batch_size = features_batch.len();
-    let tile_plane_count = tile_plane_count_v2();
-    let scalar_count = scalar_feature_count_v2();
+    let first = features_batch.first().ok_or(())?;
+    let feature_version = first.feature_version;
+    let tile_plane_count = first.tile_plane_count;
+    let scalar_count = first.scalar_feature_count;
     let seq_len = discard_sequence_length_v2();
     let event_count = discard_event_feature_count_v2();
 
@@ -464,6 +594,8 @@ fn run_session_batched(
     let hu_all = extract_vec(&outputs, "hu_logits")?;
     let value_all = extract_vec(&outputs, "value_for_risk")?;
     let fan_all = extract_vec(&outputs, "qualifying_fan_value")?;
+    let tenpai_all = extract_vec(&outputs, "opponent_tenpai_logits").ok();
+    let opp_risk_all = extract_vec(&outputs, "opponent_risk_logits")?;
     let risk_all = extract_risk_logits_batched(&outputs, batch_size)?;
 
     let mut results = Vec::with_capacity(batch_size);
@@ -480,8 +612,17 @@ fn run_session_batched(
         hu.copy_from_slice(&hu_all[i * 2..(i + 1) * 2]);
         let mut risk = [0.0f32; TILE_KIND_COUNT];
         risk.copy_from_slice(&risk_all[i * TILE_KIND_COUNT..(i + 1) * TILE_KIND_COUNT]);
+        let opponent_tenpai_logits = tenpai_all
+            .as_ref()
+            .and_then(|values| values.get(i * 3..(i + 1) * 3))
+            .and_then(|slice| <[f32; 3]>::try_from(slice).ok())
+            .unwrap_or([FALLBACK_TENPAI_LOGIT; 3]);
+        let opp_risk_start = i * 3 * TILE_KIND_COUNT;
+        let opponent_risk_logits =
+            split_opponent_risk_logits(&opp_risk_all[opp_risk_start..opp_risk_start + 3 * TILE_KIND_COUNT])?;
 
         results.push(NeuralDecisionScores {
+            feature_version,
             discard_logits: discard,
             claim_logits: claim,
             self_kong_logits: sk,
@@ -489,6 +630,8 @@ fn run_session_batched(
             value_for_risk: value_all[i],
             qualifying_fan_value: fan_all[i],
             risk_logits: risk,
+            opponent_tenpai_logits,
+            opponent_risk_logits,
         });
     }
     Ok(results)
